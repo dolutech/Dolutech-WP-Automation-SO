@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Dolutech WP Automation SO
+# Script de Automação para Ambiente WordPress
+# Desenvolvido por: Lucas Catão de Moraes
+# Site: https://dolutech.com
+
 # Nome do Sistema
 NOME_SISTEMA="Dolutech WP Automation SO"
 
