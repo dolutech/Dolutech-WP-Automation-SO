@@ -17,7 +17,7 @@ Este script facilita a instalação de ambientes WordPress, permitindo ao usuár
 
 ## Requisitos
 
-- **Sistema Operacional**: Debian 12 ou superior.
+- **Sistema Operacional**: Ubuntu 24.04 LTS ou Superior
 - **Permissões**: Usuário root ou com privilégios de `sudo`.
 
 ## Como Instalar
