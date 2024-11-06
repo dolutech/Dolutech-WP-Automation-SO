@@ -20,18 +20,33 @@ function configurar_alias_wp {
     source ~/.bashrc
 }
 
+# Função para confirmar a senha do usuário
+function confirmar_senha {
+    while true; do
+        read -sp "Digite a senha do banco de dados: " password1
+        echo
+        read -sp "Confirme a senha do banco de dados: " password2
+        echo
+        if [ "$password1" == "$password2" ]; then
+            DB_PASS="$password1"
+            break
+        else
+            echo "As senhas não coincidem. Tente novamente."
+        fi
+    done
+}
+
 # Função para instalar o ambiente completo
 function instalar_ambiente {
     # Exibe a mensagem de boas-vindas
     configurar_mensagem_boas_vindas
-    
+
     # Informações solicitadas ao usuário
     read -p "Digite o nome do domínio para o WordPress (exemplo.com): " DOMAIN_NAME
     read -p "Digite a porta para o PhpMyAdmin (ex: 8080): " PHPMYADMIN_PORT
     read -p "Digite o nome do banco de dados: " DB_NAME
     read -p "Digite o usuário do banco de dados: " DB_USER
-    read -sp "Digite a senha do banco de dados: " DB_PASS
-    echo ""
+    confirmar_senha
     read -p "Digite o usuário administrador do WordPress: " WP_ADMIN_USER
     read -sp "Digite a senha do administrador do WordPress: " WP_ADMIN_PASS
     echo ""
@@ -50,7 +65,7 @@ function instalar_ambiente {
 
     # Atualização de pacotes e instalação de dependências
     apt update && apt upgrade -y
-    apt install -y apache2 mariadb-server php8.3 libapache2-mod-php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban certbot python3-certbot-apache
+    apt install -y apache2 mariadb-server php8.3 libapache2-mod-php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban modsecurity modsecurity-crs clamav certbot python3-certbot-apache
 
     # Habilitar o módulo PHP no Apache
     sudo a2enmod php8.3
@@ -63,8 +78,10 @@ function instalar_ambiente {
     sed -i 's/max_execution_time = .*/max_execution_time = 300/' $PHP_INI
     systemctl restart apache2
 
-    # Configuração e otimização do Apache
+    # Configuração e otimização do Apache com ModSecurity
     a2enmod rewrite headers deflate expires ssl
+    a2enmod security2
+    cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
     echo "
 <IfModule mod_deflate.c>
     AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
@@ -106,7 +123,7 @@ Header always set X-XSS-Protection \"1; mode=block\"
 
     # Instalação do WordPress usando WP-CLI e configuração dos plugins
     wp core install --url="http://$DOMAIN_NAME" --title="Site $DOMAIN_NAME" --admin_user=$WP_ADMIN_USER --admin_password=$WP_ADMIN_PASS --admin_email="admin@$DOMAIN_NAME" --path=$WP_PATH --locale=$WP_LANG --allow-root
-    wp plugin install all-in-one-wp-security-and-firewall headers-security-advanced-hsts-wp ninja-firewall sucuri-scanner --activate --path=$WP_PATH --allow-root
+    wp plugin install all-in-one-wp-security-and-firewall headers-security-advanced-hsts-wp ninja-firewall --activate --path=$WP_PATH --allow-root
 
     # Configuração do Virtual Host no Apache para o domínio com suporte SSL
     echo "<VirtualHost *:80>
@@ -121,12 +138,21 @@ Header always set X-XSS-Protection \"1; mode=block\"
     </VirtualHost>" > /etc/apache2/sites-available/$DOMAIN_NAME.conf
     a2ensite $DOMAIN_NAME.conf
 
-    # Configuração do PhpMyAdmin para porta customizada sem alterar a porta do Apache
+    # Configuração do PhpMyAdmin para porta customizada com autenticação básica
     echo "Listen $PHPMYADMIN_PORT" | sudo tee /etc/apache2/ports.conf > /dev/null
     echo "<VirtualHost *:$PHPMYADMIN_PORT>
         ServerAdmin webmaster@localhost
         DocumentRoot /usr/share/phpmyadmin
+        <Directory /usr/share/phpmyadmin>
+            AuthType Basic
+            AuthName \"Restricted Access\"
+            AuthUserFile /etc/phpmyadmin/.htpasswd
+            Require valid-user
+        </Directory>
     </VirtualHost>" > /etc/apache2/sites-available/phpmyadmin.conf
+
+    # Configuração da autenticação básica para o PhpMyAdmin
+    htpasswd -cb /etc/phpmyadmin/.htpasswd pma_user pma_password  # Substitua por suas credenciais desejadas
     a2ensite phpmyadmin.conf
     systemctl reload apache2
 
@@ -137,44 +163,7 @@ Header always set X-XSS-Protection \"1; mode=block\"
     echo "Acesse o WordPress no endereço: https://$DOMAIN_NAME/wp-admin"
 }
 
-# Verificações de configuração na primeira execução
-if ! grep -q "$NOME_SISTEMA" /etc/motd; then
-    configurar_mensagem_boas_vindas
-    configurar_alias_wp
-fi
-
-# Função para gerenciar instalações existentes de WordPress
-function menu_wp {
-    echo "================= Menu Dolutech WP Automation SO ================="
-    echo "1. Instalar nova configuração do WordPress"
-    echo "2. Listar todas as instalações do WordPress"
-    echo "3. Remover instalação do WordPress"
-    echo "4. Sair"
-    echo "=================================================================="
-    read -p "Escolha uma opção: " OPCAO
-
-    case $OPCAO in
-        1)
-            instalar_ambiente
-            ;;
-        2)
-            echo "Instalações de WordPress:"
-            ls /var/www/*/public_html
-            ;;
-        3)
-            read -p "Digite o nome do domínio a ser removido: " REMOVER_DOMINIO
-            rm -rf /var/www/$REMOVER_DOMINIO
-            echo "Instalação de $REMOVER_DOMINIO removida com sucesso."
-            ;;
-        4)
-            echo "Saindo do sistema."
-            ;;
-        *)
-            echo "Opção inválida!"
-            menu_wp
-            ;;
-    esac
-}
+# Adicionar funções para Fail2Ban, UFW, ModSecurity, e ClamAV
 
 # Execução do menu inicial
 menu_wp
