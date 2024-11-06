@@ -16,19 +16,21 @@ function configurar_mensagem_boas_vindas {
 # Função para criar o alias 'wp'
 function configurar_alias_wp {
     echo "Configurando alias 'wp'..."
-    echo "alias wp='sudo ~/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
+    echo "alias wp='sudo ~/Dolutech-WP-Automation-SO.sh menu'" >> ~/.bashrc
     source ~/.bashrc
 }
 
-# Função para confirmar a senha do usuário
+# Função para confirmar senhas
 function confirmar_senha {
+    local senha1 senha2
     while true; do
-        read -sp "Digite a senha do banco de dados: " password1
+        echo "$1:"
+        read -sp "Digite a senha: " senha1
         echo
-        read -sp "Confirme a senha do banco de dados: " password2
+        read -sp "Confirme a senha: " senha2
         echo
-        if [ "$password1" == "$password2" ]; then
-            DB_PASS="$password1"
+        if [ "$senha1" == "$senha2" ]; then
+            echo "$senha1"
             break
         else
             echo "As senhas não coincidem. Tente novamente."
@@ -38,18 +40,19 @@ function confirmar_senha {
 
 # Função para instalar o ambiente completo
 function instalar_ambiente {
-    # Exibe a mensagem de boas-vindas
+    # Exibe a mensagem de boas-vindas e configurações
     configurar_mensagem_boas_vindas
+    configurar_alias_wp
 
     # Informações solicitadas ao usuário
     read -p "Digite o nome do domínio para o WordPress (exemplo.com): " DOMAIN_NAME
     read -p "Digite a porta para o PhpMyAdmin (ex: 8080): " PHPMYADMIN_PORT
     read -p "Digite o nome do banco de dados: " DB_NAME
     read -p "Digite o usuário do banco de dados: " DB_USER
-    confirmar_senha
-    read -p "Digite o usuário administrador do WordPress: " WP_ADMIN_USER
-    read -sp "Digite a senha do administrador do WordPress: " WP_ADMIN_PASS
-    echo ""
+    DB_PASS=$(confirmar_senha "Senha do banco de dados")
+    read -p "Digite o nome do usuário administrador do WordPress: " WP_ADMIN_USER
+    WP_ADMIN_PASS=$(confirmar_senha "Senha do administrador do WordPress")
+
     echo "Selecione o idioma de instalação do WordPress:"
     echo "1 - Português do Brasil"
     echo "2 - Português de Portugal"
@@ -65,7 +68,7 @@ function instalar_ambiente {
 
     # Atualização de pacotes e instalação de dependências
     apt update && apt upgrade -y
-    apt install -y apache2 mariadb-server php8.3 libapache2-mod-php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban modsecurity modsecurity-crs clamav certbot python3-certbot-apache
+    apt install -y apache2 mariadb-server php8.3 libapache2-mod-php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban modsecurity modsecurity-crs clamav certbot python3-certbot-apache apache2-utils
 
     # Habilitar o módulo PHP no Apache
     sudo a2enmod php8.3
@@ -79,8 +82,7 @@ function instalar_ambiente {
     systemctl restart apache2
 
     # Configuração e otimização do Apache com ModSecurity
-    a2enmod rewrite headers deflate expires ssl
-    a2enmod security2
+    a2enmod rewrite headers deflate expires ssl security2
     cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
     echo "
 <IfModule mod_deflate.c>
@@ -121,7 +123,12 @@ Header always set X-XSS-Protection \"1; mode=block\"
     sed -i "s/username_here/$DB_USER/" $WP_PATH/wp-config.php
     sed -i "s/password_here/$DB_PASS/" $WP_PATH/wp-config.php
 
-    # Instalação do WordPress usando WP-CLI e configuração dos plugins
+    # Instalação do WP-CLI
+    curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    chmod +x wp-cli.phar
+    mv wp-cli.phar /usr/local/bin/wp
+
+    # Instalação do WordPress e plugins usando WP-CLI
     wp core install --url="http://$DOMAIN_NAME" --title="Site $DOMAIN_NAME" --admin_user=$WP_ADMIN_USER --admin_password=$WP_ADMIN_PASS --admin_email="admin@$DOMAIN_NAME" --path=$WP_PATH --locale=$WP_LANG --allow-root
     wp plugin install all-in-one-wp-security-and-firewall headers-security-advanced-hsts-wp ninja-firewall --activate --path=$WP_PATH --allow-root
 
@@ -152,7 +159,7 @@ Header always set X-XSS-Protection \"1; mode=block\"
     </VirtualHost>" > /etc/apache2/sites-available/phpmyadmin.conf
 
     # Configuração da autenticação básica para o PhpMyAdmin
-    htpasswd -cb /etc/phpmyadmin/.htpasswd pma_user pma_password  # Substitua por suas credenciais desejadas
+    htpasswd -cb /etc/phpmyadmin/.htpasswd pma_user pma_password
     a2ensite phpmyadmin.conf
     systemctl reload apache2
 
@@ -163,7 +170,55 @@ Header always set X-XSS-Protection \"1; mode=block\"
     echo "Acesse o WordPress no endereço: https://$DOMAIN_NAME/wp-admin"
 }
 
-# Adicionar funções para Fail2Ban, UFW, ModSecurity, e ClamAV
+# Função do menu principal
+function menu_wp {
+    echo "================= Menu Dolutech WP Automation SO ================="
+    echo "1. Instalar nova configuração do WordPress"
+    echo "2. Listar todas as instalações do WordPress"
+    echo "3. Remover instalação do WordPress"
+    echo "4. Instalar/Configurar Fail2Ban e UFW"
+    echo "5. Instalar/Configurar ModSecurity com OWASP CRS"
+    echo "6. Instalar ClamAV e realizar scans de segurança"
+    echo "7. Renovar Certificados SSL"
+    echo "8. Sair"
+    echo "=================================================================="
+    read -p "Escolha uma opção: " OPCAO
 
-# Execução do menu inicial
-menu_wp
+    case $OPCAO in
+        1) instalar_ambiente ;;
+        2) echo "Instalações de WordPress:"; ls /var/www/*/public_html ;;
+        3) 
+            read -p "Digite o nome do domínio a ser removido: " REMOVER_DOMINIO
+            rm -rf /var/www/$REMOVER_DOMINIO
+            echo "Instalação de $REMOVER_DOMINIO removida com sucesso."
+            ;;
+        4) 
+            echo "Configurando Fail2Ban e UFW..."
+            # Implementar configuração do Fail2Ban e UFW aqui
+            ;;
+        5) 
+            echo "Configurando ModSecurity com OWASP CRS..."
+            # Implementar configuração do ModSecurity aqui
+            ;;
+        6)
+            echo "Instalando ClamAV e realizando scan de segurança..."
+            # Implementar ClamAV e escaneamento aqui
+            ;;
+        7) 
+            echo "Renovando certificados SSL..."
+            certbot renew --dry-run
+            ;;
+        8) 
+            echo "Saindo do sistema."
+            exit 0
+            ;;
+        *) echo "Opção inválida!" ;;
+    esac
+}
+
+# Verificar se o argumento para abrir o menu foi passado
+if [[ "$1" == "menu" ]]; then
+    menu_wp
+else
+    instalar_ambiente
+fi
