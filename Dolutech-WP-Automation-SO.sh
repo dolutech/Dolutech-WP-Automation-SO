@@ -50,12 +50,10 @@ function instalar_ambiente {
 
     # Atualização de pacotes e instalação de dependências
     apt update && apt upgrade -y
-    apt install -y apache2 mariadb-server php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban certbot python3-certbot-apache
+    apt install -y apache2 mariadb-server php8.3 libapache2-mod-php8.3 php8.3-fpm php8.3-mysql php8.3-curl php8.3-xml php8.3-zip php8.3-gd php8.3-mbstring php8.3-soap php8.3-intl php8.3-bcmath php8.3-cli redis-server pure-ftpd phpmyadmin wget unzip ufw fail2ban certbot python3-certbot-apache
 
-    # Instalação do WP-CLI
-    curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-    chmod +x wp-cli.phar
-    mv wp-cli.phar /usr/local/bin/wp
+    # Habilitar o módulo PHP no Apache
+    sudo a2enmod php8.3
 
     # Configurações do PHP com otimizações para WordPress
     PHP_INI="/etc/php/8.3/apache2/php.ini"
@@ -180,4 +178,3 @@ function menu_wp {
 
 # Execução do menu inicial
 menu_wp
-
