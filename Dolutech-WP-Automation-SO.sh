@@ -2,7 +2,10 @@
 
 # Dolutech WP Automation SO - Instalação Completa do WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, mod_pagespeed
 # Desenvolvido por: Lucas Catão de Moraes
+# Sou especialista em Cibersegurança, Big Data e Privacidade de dados
+# E-mail: lucas@dolutech.com
 # Site: https://dolutech.com
+# Sou apaixonado por Café que tal me pagar um?: https://www.paypal.com/paypalme/cataodemoraes
 
 # Nome do Sistema
 NOME_SISTEMA="Dolutech WP Automation SO"
@@ -10,10 +13,49 @@ NOME_SISTEMA="Dolutech WP Automation SO"
 # Arquivo de flag para verificar se a configuração inicial foi concluída
 FLAG_ARQUIVO="/etc/dolutech_wp_initial_setup_done"
 
-# Função para configurar a mensagem de boas-vindas com créditos no /etc/motd
+# URL do arquivo version.txt no GitHub
+VERSION_URL="https://raw.githubusercontent.com/dolutech/Dolutech-WP-Automation-SO/main/version.txt"
+
+# URL do script atualizado no GitHub
+SCRIPT_URL="https://raw.githubusercontent.com/dolutech/Dolutech-WP-Automation-SO/main/Dolutech-WP-Automation-SO.sh"
+
+# Caminho do script local
+SCRIPT_LOCAL="/usr/local/bin/Dolutech-WP-Automation-SO.sh"
+
+# Diretório do script
+DIR_SCRIPT=$(dirname $(realpath $0))
+
+# Verifica se o arquivo version.txt existe localmente, caso contrário, faz o download
+if [ ! -f "$DIR_SCRIPT/version.txt" ]; then
+    echo "Arquivo version.txt não encontrado localmente. Baixando..."
+    curl -o "$DIR_SCRIPT/version.txt" $VERSION_URL
+fi
+
+# Verifica a versão local
+VERSAO_LOCAL=$(grep "Version=" "$DIR_SCRIPT/version.txt" | cut -d'=' -f2)
+
+# Obtém a versão remota
+VERSAO_REMOTA=$(curl -s $VERSION_URL | grep "Version=" | cut -d'=' -f2)
+
+echo "Versão local: $VERSAO_LOCAL"
+echo "Versão remota: $VERSAO_REMOTA"
+
+# Verifica se a versão remota é diferente da local
+if [ "$VERSAO_REMOTA" != "$VERSAO_LOCAL" ]; then
+    echo "Nova versão disponível. Atualizando o script..."
+    curl -o $SCRIPT_LOCAL $SCRIPT_URL
+    chmod +x $SCRIPT_LOCAL
+    echo "Script atualizado para a versão $VERSAO_REMOTA"
+    # Atualiza a versão local no arquivo version.txt
+    echo "Version=$VERSAO_REMOTA" > "$DIR_SCRIPT/version.txt"
+else
+    echo "O script já está atualizado."
+fi
+
+# Função para configurar a mensagem de boas-vindas com créditos e versão no /etc/motd
 function configurar_mensagem_boas_vindas {
     echo "Configurando mensagem de boas-vindas com créditos..."
-    echo -e "==========================================\nBem-vindo ao Dolutech WP Automation SO\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
+    echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
 }
 
 # Função para criar o alias 'dolutech'
@@ -320,10 +362,12 @@ EOF
 function otimizar_php {
     PHP_INI="/etc/php/8.3/apache2/php.ini"
     echo "Otimizando configurações do PHP..."
-    sudo sed -i 's|memory_limit = .*|memory_limit = 256M|' "$PHP_INI"
-    sudo sed -i 's|upload_max_filesize = .*|upload_max_filesize = 100M|' "$PHP_INI"
-    sudo sed -i 's|post_max_size = .*|post_max_size = 100M|' "$PHP_INI"
-    sudo sed -i 's|max_execution_time = .*|max_execution_time = 300|' "$PHP_INI"
+    sudo sed -i 's|memory_limit = .*|memory_limit = 1024M|' "$PHP_INI"
+    sudo sed -i 's|upload_max_filesize = .*|upload_max_filesize = 128M|' "$PHP_INI"
+    sudo sed -i 's|post_max_size = .*|post_max_size = 128M|' "$PHP_INI"
+    sudo sed -i 's|max_execution_time = .*|max_execution_time = 3000|' "$PHP_INI"
+    sudo sed -i 's|max_input_time = .*|max_input_time = 3000|' "$PHP_INI"
+    sudo sed -i 's|max_input_vars = .*|max_input_vars = 3000|' "$PHP_INI"
     sudo systemctl restart apache2
     echo "Configurações do PHP otimizadas e Apache reiniciado."
 }
@@ -786,7 +830,8 @@ function verificar_dependencias {
 # Início do Script
 clear
 echo "================= Dolutech WP Automation SO ================="
-echo "Script de automação para instalação e gerenciamento de WordPress"
+echo "Sistema de automação para instalação e gerenciamento de WordPress"
+echo "Desenvolvido com Amor ❤ para a comunidade de Lingua Portuguesa"
 echo "=============================================================="
 
 # Verificar se a configuração inicial já foi feita
@@ -808,5 +853,3 @@ fi
 while true; do
     menu_wp
 done
-
-
