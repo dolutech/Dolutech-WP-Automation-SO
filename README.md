@@ -67,7 +67,7 @@ Este projeto é de código aberto e está disponível no GitHub. Para contribuir
 [Repositório no GitHub](https://github.com/dolutech/Dolutech-WP-Automation-SO)
 
 ## Licença
-Este projeto está licenciado sob a [Licença MIT](https://opensource.org/licenses/MIT).
+Este projeto está licenciado sob a [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
 
 ---
 
