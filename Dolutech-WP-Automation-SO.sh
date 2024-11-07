@@ -5,6 +5,7 @@
 # Sou especialista em Cibersegurança, Big Data e Privacidade de dados
 # E-mail: lucas@dolutech.com
 # Site: https://dolutech.com
+# Licenciado sob GPLv3 - https://www.gnu.org/licenses/gpl-3.0.html
 # Sou apaixonado por Café que tal me pagar um?: https://www.paypal.com/paypalme/cataodemoraes
 
 # Nome do Sistema
