@@ -1,95 +1,69 @@
-
 # Dolutech WP Automation SO
 
-**Dolutech WP Automation SO** é um script de automação para instalação e configuração completa de ambientes WordPress otimizados com Apache em sistemas Debian. Este script instala todas as dependências necessárias, configura o ambiente de Apache e PHP para WordPress, e possibilita a instalação de múltiplas instâncias de WordPress com suporte para SSL via Let's Encrypt, além de outras opções para gerenciamento do ambiente.
+## Visão Geral
+O **Dolutech WP Automation SO** é um script de automação completo projetado para a instalação e gestão de ambientes WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, e mod_pagespeed, incluindo SSL com Certbot. Desenvolvido por **Lucas Catão de Moraes**, este script permite configurar um ambiente robusto e otimizado para WordPress, facilitando o processo de instalação e manutenção de várias instâncias.
 
-## Descrição do Projeto
+## Pré-requisitos
+- **Ubuntu 24.04** (até o momento, o script é compatível apenas com esta versão do sistema operacional).
+- Execute o comando a seguir para garantir que o sistema esteja atualizado:
+  ```bash
+  sudo apt update && sudo apt upgrade -y
+  ```
 
-Este script facilita a instalação de ambientes WordPress, permitindo ao usuário configurar rapidamente o servidor com Apache, MariaDB, PHP 8.3, phpMyAdmin, UFW, Fail2ban, e otimizações adicionais para desempenho e segurança. Além disso, possui uma interface de menu para gerenciar instalações, listar e remover instâncias de WordPress.
+## Instalação
+Para instalar e executar o script, copie e cole o seguinte comando no terminal SSH:
 
-### Recursos
-
-- **Instalação de ambiente WordPress completo**: Apache, MariaDB, PHP 8.3, phpMyAdmin, Certificados SSL via Let's Encrypt.
-- **Configuração de Alias `wp`**: Atalho para iniciar o menu do script.
-- **Configuração de Segurança**: Fail2ban e UFW para proteção de firewall.
-- **Instalação de Plugins de Segurança**: Plugins populares de segurança para o WordPress.
-- **Gerenciamento via Menu**: Instalar, listar e remover instâncias de WordPress diretamente no terminal.
-
-## Requisitos
-
-- **Sistema Operacional**: Ubuntu 24.04 LTS ou Superior
-- **Permissões**: Usuário root ou com privilégios de `sudo`.
-
-## Como Instalar
-
-1. Clone o repositório para o seu servidor:
-   ```bash
-   git clone https://github.com/dolutech/Dolutech-WP-Automation-SO.git
-   cd Dolutech-WP-Automation-SO
-   ```
-
-2. Dê permissão de execução ao script:
-   ```bash
-   chmod +x Dolutech-WP-Automation-SO.sh
-   ```
-
-3. Execute o script para iniciar o menu de instalação:
-   ```bash
-   sudo ./Dolutech-WP-Automation-SO.sh
-   ```
-
-4. **Primeira Execução**: O script irá configurar uma mensagem de boas-vindas e um alias `wp` para simplificar a execução do menu.
-
-## Opções do Menu
-
-1. **Instalar nova configuração do WordPress**: Instala uma nova instância do WordPress, solicitando informações como domínio, banco de dados e configurações de administrador.
-2. **Listar todas as instalações do WordPress**: Exibe uma lista de todas as instalações de WordPress no servidor.
-3. **Remover instalação do WordPress**: Remove uma instalação específica do WordPress, apagando os arquivos do domínio especificado.
-4. **Sair**: Encerra o menu.
-
-## Estrutura do Script
-
-- **Configuração Inicial**: O script configura uma mensagem de boas-vindas em `/etc/motd` e cria o alias `wp` para facilitar o acesso ao menu.
-- **Instalação do Ambiente**: Configura Apache, MariaDB, PHP, phpMyAdmin e otimizações para WordPress, além de instalar e ativar plugins de segurança.
-- **Configuração do Apache**: Cria configurações personalizadas, otimizando cache e compressão.
-- **Configuração do PHP**: Ajusta limites de memória e outros parâmetros para um desempenho otimizado.
-- **Certificados SSL**: Configura automaticamente SSL usando Let's Encrypt para garantir a segurança das conexões.
-- **Segurança**: Instala e configura UFW e Fail2ban, aumentando a proteção contra ataques.
-
-## Como Usar
-
-Após a instalação, use o alias `wp` para acessar o menu sempre que necessário:
 ```bash
-wp
+sudo apt update && sudo apt upgrade -y && curl -o /usr/local/bin/Dolutech-WP-Automation-SO.sh https://raw.githubusercontent.com/dolutech/Dolutech-WP-Automation-SO/main/Dolutech-WP-Automation-SO.sh && sudo chmod +x /usr/local/bin/Dolutech-WP-Automation-SO.sh && sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh
 ```
 
-O menu permitirá a instalação de novas instâncias de WordPress, listagem e remoção de instalações, além de fornecer um controle completo do ambiente.
+## Recursos do Script
+O **Dolutech WP Automation SO** oferece as seguintes funcionalidades:
 
-## Estrutura do Projeto
+### 1. **Configuração Inicial Completa**
+- Instalação e configuração de Apache, MariaDB, PHP, Redis, Nginx, Varnish, mod_pagespeed, phpMyAdmin e Certbot.
+- Otimizações de configuração do Apache e PHP para melhor desempenho.
+- Configuração de mensagens de boas-vindas e alias no sistema.
 
-- `Dolutech-WP-Automation-SO.sh`: Script principal para instalação e gerenciamento do WordPress.
-- `README.md`: Documentação detalhada do projeto.
+### 2. **Instalação de WordPress Automatizada**
+- Criação de banco de dados e usuário no MariaDB.
+- Configuração de diretórios e permissões adequadas.
+- Instalação e configuração do WordPress via WP-CLI.
+- Configuração automática de plugins de segurança e cache Redis.
 
-## Créditos
+### 3. **Gerenciamento de Instalações**
+- Listagem de todas as instalações de WordPress.
+- Remoção completa de instalações, incluindo bancos de dados e certificados SSL.
 
-Desenvolvido por: **Lucas Catão de Moraes**  
-Website: [Dolutech](https://dolutech.com)
+## Estrutura do Script
+O script está dividido em funções que realizam as seguintes tarefas:
+- **instalar_dependencias_iniciais**: Instala e configura todos os componentes necessários.
+- **instalar_wordpress**: Automatiza a instalação de novas instâncias de WordPress.
+- **remover_instalacao**: Remove uma instalação de WordPress e suas dependências.
+- **menu_wp**: Interface de menu para o gerenciamento das instalações.
 
-## Licença
+## Exemplo de Uso
+Após a execução do comando de instalação, você pode iniciar o script digitando:
 
-Este projeto é licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+```bash
+dolutech
+```
+
+O menu interativo permite:
+1. Instalar uma nova configuração de WordPress.
+2. Listar todas as instalações existentes.
+3. Remover uma instalação.
+4. Sair do sistema.
 
 ## Contribuição
+Este projeto é de código aberto e está disponível no GitHub. Para contribuir, sinta-se à vontade para abrir issues ou fazer pull requests:
 
-Contribuições são bem-vindas! Sinta-se à vontade para abrir issues e pull requests para melhorias no script ou na documentação.
+[Repositório no GitHub](https://github.com/dolutech/Dolutech-WP-Automation-SO)
 
-## Palavras-chave e Hashtags
+## Licença
+Este projeto está licenciado sob a [Licença MIT](https://opensource.org/licenses/MIT).
 
-- Automação WordPress
-- Script Bash WordPress
-- Apache e PHP WordPress
-- Automação Servidor Web
-- Segurança WordPress
-- UFW e Fail2ban
+---
 
-**Hashtags**: #WordPress #Automacao #Seguranca #Dolutech #Apache #BashScript
+**Desenvolvido por Lucas Catão de Moraes**  
+Site: [Dolutech](https://dolutech.com)
