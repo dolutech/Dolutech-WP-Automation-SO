@@ -3,6 +3,9 @@
 ## Visão Geral
 O **Dolutech WP Automation SO** é um script de automação completo projetado para a instalação e gestão de ambientes WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, e mod_pagespeed, incluindo SSL com Certbot. Desenvolvido por **Lucas Catão de Moraes**, este script permite configurar um ambiente robusto e otimizado para WordPress, facilitando o processo de instalação e manutenção de várias instâncias.
 
+## Versão e Atualização Automática
+- **Versão 0.1* O Sistema está na versão 0.1, está preparado para atualizações automáticas mesmo depois de instalado na sua máquina.
+
 ## Pré-requisitos
 - **Ubuntu 24.04** (até o momento, o script é compatível apenas com esta versão do sistema operacional).
 - Execute o comando a seguir para garantir que o sistema esteja atualizado:
@@ -22,11 +25,14 @@ O **Dolutech WP Automation SO** oferece as seguintes funcionalidades:
 
 ### 1. **Configuração Inicial Completa**
 - Instalação e configuração de Apache, MariaDB, PHP, Redis, Nginx, Varnish, mod_pagespeed, phpMyAdmin e Certbot.
-- Otimizações de configuração do Apache e PHP para melhor desempenho.
+- Otimizações de configuração do Apache, MariaDB e PHP para melhor desempenho.
 - Configuração de mensagens de boas-vindas e alias no sistema.
 
 ### 2. **Instalação de WordPress Automatizada**
 - Criação de banco de dados e usuário no MariaDB.
+- Otimização de Cache no WordPress.
+- Sincronização do SSL com Varnish Cache.
+- .htaccess configurado e otimizado.
 - Configuração de diretórios e permissões adequadas.
 - Instalação e configuração do WordPress via WP-CLI.
 - Configuração automática de plugins de segurança e cache Redis.
