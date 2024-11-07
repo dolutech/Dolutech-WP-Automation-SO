@@ -72,5 +72,5 @@ Este projeto está licenciado sob a [Licença MIT](https://opensource.org/licens
 ---
 
 **Desenvolvido por Lucas Catão de Moraes**  
-Site: [Dolutech](https://dolutech.com)
-Sou apaixonado por Café que tal me pagar um?: [Pagar um café para o Luquinhas!](https://www.paypal.com/paypalme/cataodemoraes)
+- Site: [Dolutech](https://dolutech.com)
+- Sou apaixonado por Café que tal me pagar um?: [Pagar um café para o Luquinhas!](https://www.paypal.com/paypalme/cataodemoraes)
