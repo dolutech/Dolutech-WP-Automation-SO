@@ -59,21 +59,26 @@ function configurar_mensagem_boas_vindas {
     echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
 }
 
-# Função para criar o alias 'dolutech'
+# Função para criar o alias 'dolutech' e configurar o link simbólico
 function configurar_alias_wp {
     echo "Configurando alias 'dolutech'..."
-    # Verifica e adiciona o alias ao ~/.bashrc para persistência
+
+    # Adiciona o alias no ~/.bashrc para persistência
     if ! grep -q "alias dolutech=" ~/.bashrc; then
         echo "alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
+        source ~/.bashrc
+        echo "Alias 'dolutech' configurado no ~/.bashrc."
     fi
 
-    # Configura o alias para a sessão atual
-    alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'
+    # Cria o link simbólico em /usr/local/bin para o comando imediato
+    if [ ! -f /usr/local/bin/dolutech ]; then
+        echo "Criando link simbólico para o comando 'dolutech'..."
+        sudo ln -s /usr/local/bin/Dolutech-WP-Automation-SO.sh /usr/local/bin/dolutech
+        sudo chmod +x /usr/local/bin/Dolutech-WP-Automation-SO.sh
+        echo "Link simbólico 'dolutech' criado e pronto para uso."
+    fi
 
-    # Atualiza o PATH da sessão atual para garantir acesso ao script
-    export PATH=$PATH:/usr/local/bin
-
-    echo "Alias 'dolutech' configurado e ativado para a sessão atual."
+    echo "Configuração de alias e link simbólico concluída."
 }
 
 # Função para instalar o WP-CLI
