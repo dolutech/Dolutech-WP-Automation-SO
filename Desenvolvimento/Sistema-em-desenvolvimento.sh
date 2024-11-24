@@ -62,12 +62,17 @@ function configurar_mensagem_boas_vindas {
 # Função para criar o alias 'dolutech'
 function configurar_alias_wp {
     echo "Configurando alias 'dolutech'..."
+    # Verifica e adiciona o alias ao ~/.bashrc para persistência
     if ! grep -q "alias dolutech=" ~/.bashrc; then
         echo "alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
-        source ~/.bashrc
     fi
+
     # Configura o alias para a sessão atual
     alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'
+
+    # Atualiza o PATH da sessão atual para garantir acesso ao script
+    export PATH=$PATH:/usr/local/bin
+
     echo "Alias 'dolutech' configurado e ativado para a sessão atual."
 }
 
