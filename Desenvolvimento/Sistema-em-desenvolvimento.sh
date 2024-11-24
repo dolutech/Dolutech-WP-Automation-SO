@@ -298,17 +298,46 @@ EOF
 # Função para instalar e configurar o mod_pagespeed do Google no Apache
 function instalar_mod_pagespeed {
     echo "Instalando mod_pagespeed..."
-    wget https://dl-ssl.google.com/dl/linux/direct/mod-pagespeed-stable_current_amd64.deb
-    sudo dpkg -i mod-pagespeed-*.deb
-    sudo apt -f install -y
+
+    # Adicionar a chave pública do Google
+    echo "Adicionando chave pública do Google..."
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
     if [ $? -ne 0 ]; then
-        echo "Erro na instalação do mod_pagespeed."
+        echo "Erro ao adicionar a chave pública do Google. Verifique sua conexão com a internet."
         exit 1
     fi
 
+    # Baixar o pacote do mod_pagespeed
+    wget https://dl-ssl.google.com/dl/linux/direct/mod-pagespeed-stable_current_amd64.deb
+    if [ $? -ne 0 ]; then
+        echo "Erro ao baixar o pacote mod_pagespeed. Verifique sua conexão com a internet."
+        exit 1
+    fi
+
+    # Instalar o pacote
+    sudo dpkg -i mod-pagespeed-*.deb
+    sudo apt -f install -y
+    if [ $? -ne 0 ]; then
+        echo "Erro na instalação do mod_pagespeed. Tentando corrigir dependências..."
+        sudo apt-get install -f -y
+        if [ $? -ne 0 ]; then
+            echo "Erro ao corrigir dependências. Verifique os repositórios e tente novamente."
+            exit 1
+        fi
+    fi
+
+    # Remover o pacote baixado para liberar espaço
+    rm -f mod-pagespeed-*.deb
+
     # Reiniciar Apache para carregar mod_pagespeed
+    echo "Reiniciando Apache para carregar mod_pagespeed..."
     sudo systemctl restart apache2
-    echo "mod_pagespeed instalado e Apache reiniciado com sucesso."
+    if [ $? -eq 0 ]; then
+        echo "mod_pagespeed instalado e Apache reiniciado com sucesso."
+    else
+        echo "Erro ao reiniciar o Apache. Verifique os logs para mais detalhes."
+        exit 1
+    fi
 }
 
 # Função para instalar e configurar o phpMyAdmin
@@ -756,10 +785,17 @@ function listar_instalacoes {
 
 # Função para verificar e instalar zip e unzip
 function verificar_zip {
+    echo "Verificando se zip e unzip estão instalados..."
     if ! command -v zip &> /dev/null || ! command -v unzip &> /dev/null; then
         echo "Instalando zip e unzip..."
         sudo apt-get update && sudo apt-get install -y zip unzip
+        if [ $? -ne 0 ]; then
+            echo "Erro ao instalar zip e unzip. Verifique a conexão com a internet."
+            exit 1
+        fi
         echo "zip e unzip instalados com sucesso."
+    else
+        echo "zip e unzip já estão instalados."
     fi
 }
 
@@ -816,13 +852,27 @@ function fazer_backup {
     echo "Nome do banco de dados: $DB_NAME"
 
     # Fazer dump do banco de dados
+    echo "Exportando banco de dados..."
     sudo mysqldump -u "$DB_USER" -p "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
+    if [ $? -ne 0 ]; then
+        echo "Erro ao exportar o banco de dados. Verifique as credenciais no wp-config.php."
+        return
+    fi
 
     # Compactar tudo
     echo "Compactando backup..."
-    sudo zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html"
+    sudo zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Erro ao criar o arquivo ZIP. Verifique se o zip está corretamente instalado."
+        return
+    fi
 
     echo "Backup criado com sucesso: $BACKUP_ZIP"
+
+    # Remover a pasta /db por segurança
+    echo "Removendo pasta temporária /db por segurança..."
+    sudo rm -rf "$DB_BACKUP_DIR"
+    echo "Pasta /db removida."
 
     # Perguntar se deseja enviar para FTP
     read -p "Deseja enviar o backup para um servidor FTP? (s/n): " ENVIAR_FTP
@@ -846,7 +896,11 @@ function fazer_backup {
         put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
         bye
 EOF
-        echo "Backup enviado com sucesso para o servidor FTP."
+        if [ $? -eq 0 ]; then
+            echo "Backup enviado com sucesso para o servidor FTP."
+        else
+            echo "Erro ao enviar o backup para o servidor FTP."
+        fi
     fi
 
     # Perguntar se deseja agendar backup automático
@@ -883,13 +937,12 @@ function fazer_backup_automatico {
     local OPCAO_BACKUP=$2
     echo "Executando backup automático para o domínio: $DOMINIO"
 
-    # Verifica se o backup é local ou FTP
     if [ "$OPCAO_BACKUP" == "2" ]; then
         echo "Enviando backup automático para FTP..."
-        # Reutilize a lógica de FTP da função `fazer_backup`
+        fazer_backup "$DOMINIO" "ftp"
     else
         echo "Realizando backup local."
-        # Reutilize a lógica de backup local da função `fazer_backup`
+        fazer_backup "$DOMINIO" "local"
     fi
 }
 
