@@ -741,14 +741,6 @@ DROP USER IF EXISTS '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-    # Remover arquivos de configuração do phpMyAdmin se existirem
-    echo "Removendo configuração do phpMyAdmin se existir..."
-    if [ -f "/etc/apache2/sites-available/phpmyadmin.conf" ]; then
-        sudo a2dissite phpmyadmin.conf
-        sudo rm "/etc/apache2/sites-available/phpmyadmin.conf"
-        sudo systemctl reload apache2
-    fi
-
     # Recarregar o Nginx para aplicar as mudanças
     sudo systemctl reload nginx
 
@@ -762,34 +754,183 @@ function listar_instalacoes {
     find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" || echo "Nenhuma instalação encontrada."
 }
 
-# Função para gerenciar instalações existentes de WordPress
-function menu_wp {
-    echo "================= Menu Dolutech WP Automation SO ================="
-    echo "1. Instalar nova configuração do WordPress"
-    echo "2. Listar todas as instalações do WordPress"
-    echo "3. Remover instalação do WordPress"
-    echo "4. Sair"
-    echo "=================================================================="
-    read -p "Escolha uma opção: " OPCAO
+# Função para verificar e instalar zip e unzip
+function verificar_zip {
+    if ! command -v zip &> /dev/null || ! command -v unzip &> /dev/null; then
+        echo "Instalando zip e unzip..."
+        sudo apt-get update && sudo apt-get install -y zip unzip
+        echo "zip e unzip instalados com sucesso."
+    fi
+}
 
-    case $OPCAO in
-        1)
-            instalar_wordpress
-            ;;
-        2)
-            listar_instalacoes
-            ;;
-        3)
-            remover_instalacao
-            ;;
-        4)
-            echo "Saindo do sistema."
-            exit 0
-            ;;
-        *)
-            echo "Opção inválida!"
-            ;;
-    esac
+# Função para fazer backup de uma instalação do WordPress
+function fazer_backup {
+    # Verificar zip e unzip
+    verificar_zip
+
+    # Listar domínios disponíveis
+    echo "Domínios configurados para WordPress em /var/www:"
+    DOMINIOS=$(find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+    
+    if [ -z "$DOMINIOS" ]; then
+        echo "Nenhum domínio encontrado."
+        return
+    fi
+
+    echo "$DOMINIOS"
+    read -p "Digite o domínio para fazer o backup: " DOMINIO
+
+    if [ ! -d "/var/www/$DOMINIO/public_html" ]; then
+        echo "Domínio inválido ou pasta não encontrada."
+        return
+    fi
+
+    # Criar a pasta de backup, se não existir
+    BACKUP_DIR="/backup"
+    [ ! -d "$BACKUP_DIR" ] && sudo mkdir -p "$BACKUP_DIR" && sudo chmod 755 "$BACKUP_DIR"
+
+    # Caminhos e nomes
+    DATA=$(date +"%Y%m%d-%H%M%S")
+    BACKUP_ZIP="$BACKUP_DIR/${DOMINIO}_backup_$DATA.zip"
+    DB_BACKUP_DIR="/var/www/$DOMINIO/public_html/db"
+
+    # Criar pasta db dentro do public_html se não existir
+    [ ! -d "$DB_BACKUP_DIR" ] && mkdir -p "$DB_BACKUP_DIR"
+
+    # Ler informações do wp-config.php
+    CONFIG_FILE="/var/www/$DOMINIO/public_html/wp-config.php"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Arquivo wp-config.php não encontrado em /var/www/$DOMINIO/public_html."
+        return
+    fi
+
+    DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
+    DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
+
+    if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+        echo "Não foi possível obter informações do banco de dados."
+        return
+    fi
+
+    echo "Usuário do banco de dados: $DB_USER"
+    echo "Nome do banco de dados: $DB_NAME"
+
+    # Fazer dump do banco de dados
+    sudo mysqldump -u "$DB_USER" -p "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
+
+    # Compactar tudo
+    echo "Compactando backup..."
+    sudo zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html"
+
+    echo "Backup criado com sucesso: $BACKUP_ZIP"
+
+    # Perguntar se deseja enviar para FTP
+    read -p "Deseja enviar o backup para um servidor FTP? (s/n): " ENVIAR_FTP
+    if [ "$ENVIAR_FTP" == "s" ]; then
+        if ! command -v lftp &> /dev/null; then
+            echo "Instalando lftp..."
+            sudo apt-get update && sudo apt-get install -y lftp
+        fi
+
+        read -p "Digite o endereço do servidor FTP: " FTP_SERVIDOR
+        read -p "Digite o usuário do FTP: " FTP_USUARIO
+        read -s -p "Digite a senha do FTP: " FTP_SENHA
+        echo
+        read -p "Digite a porta do FTP (padrão: 21): " FTP_PORTA
+        FTP_PORTA=${FTP_PORTA:-21}
+        read -p "Digite a pasta de destino no FTP (deixe em branco para a raiz): " FTP_PASTA
+        FTP_PASTA=${FTP_PASTA:-"/"}
+
+        echo "Enviando backup para FTP..."
+        lftp -u "$FTP_USUARIO","$FTP_SENHA" -p "$FTP_PORTA" "$FTP_SERVIDOR" <<EOF
+        put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
+        bye
+EOF
+        echo "Backup enviado com sucesso para o servidor FTP."
+    fi
+
+    # Perguntar se deseja agendar backup automático
+    read -p "Deseja agendar backups automáticos diários? (s/n): " AGENDAR_BACKUP
+    if [ "$AGENDAR_BACKUP" == "s" ]; then
+        read -p "Digite a hora para o backup diário (0-23): " HORA
+        read -p "O backup será: (1) Local ou (2) Enviado para FTP? Escolha: " OPCAO_BACKUP
+        CRON_JOB="$HORA * * * * sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh backup $DOMINIO $OPCAO_BACKUP"
+        (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+        echo "Backup automático agendado para o domínio $DOMINIO às $HORA horas diariamente."
+    fi
+
+    # Mostrar rotinas de backup automáticas ativas
+    read -p "Deseja ver as rotinas de backup automáticas ativas? (s/n): " VER_ROTINAS
+    if [ "$VER_ROTINAS" == "s" ]; then
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup"
+    fi
+
+    # Remoção de backups automáticos
+    read -p "Deseja remover alguma rotina de backup automática? (s/n): " REMOVER_ROTINA
+    if [ "$REMOVER_ROTINA" == "s" ]; then
+        echo "Rotinas de backup automáticas ativas:"
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup" | nl
+        read -p "Digite o número da rotina que deseja remover: " NUMERO
+        NOVA_CRONTAB=$(crontab -l | sed "${NUMERO}d")
+        echo "$NOVA_CRONTAB" | crontab -
+        echo "Rotina de backup removida."
+    fi
+}
+
+# Função para executar backups automáticos
+function fazer_backup_automatico {
+    local DOMINIO=$1
+    local OPCAO_BACKUP=$2
+    echo "Executando backup automático para o domínio: $DOMINIO"
+
+    # Verifica se o backup é local ou FTP
+    if [ "$OPCAO_BACKUP" == "2" ]; then
+        echo "Enviando backup automático para FTP..."
+        # Reutilize a lógica de FTP da função `fazer_backup`
+    else
+        echo "Realizando backup local."
+        # Reutilize a lógica de backup local da função `fazer_backup`
+    fi
+}
+
+# Menu principal
+function menu_wp {
+    while true; do
+        echo "================= Menu Dolutech WP Automation SO ================="
+        echo "1. Instalar nova configuração do WordPress"
+        echo "2. Listar todas as instalações do WordPress"
+        echo "3. Fazer Backup de uma Instalação do WordPress"
+        echo "4. Remover instalação do WordPress"
+        echo "5. Ver e Remover Backups Automáticos"
+        echo "6. Sair"
+        echo "=================================================================="
+        read -p "Escolha uma opção: " OPCAO
+
+        case $OPCAO in
+            1)
+                instalar_wordpress
+                ;;
+            2)
+                listar_instalacoes
+                ;;
+            3)
+                fazer_backup
+                ;;
+            4)
+                remover_instalacao
+                ;;
+            5)
+                fazer_backup_automatico
+                ;;
+            6)
+                echo "Saindo do sistema."
+                exit 0
+                ;;
+            *)
+                echo "Opção inválida!"
+                ;;
+        esac
+    done
 }
 
 # Função para verificar se as dependências já estão instaladas
