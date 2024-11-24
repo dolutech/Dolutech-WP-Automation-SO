@@ -299,38 +299,36 @@ EOF
 function instalar_mod_pagespeed {
     echo "Instalando mod_pagespeed..."
 
-    # Adicionar a chave pública do Google
+    # Adicionar a chave pública do Google com o método atualizado
     echo "Adicionando chave pública do Google..."
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo tee /usr/share/keyrings/google-mod-pagespeed.gpg > /dev/null
     if [ $? -ne 0 ]; then
         echo "Erro ao adicionar a chave pública do Google. Verifique sua conexão com a internet."
         exit 1
     fi
 
-    # Baixar o pacote do mod_pagespeed
-    wget https://dl-ssl.google.com/dl/linux/direct/mod-pagespeed-stable_current_amd64.deb
+    # Adicionar o repositório mod_pagespeed ao sources.list.d com Signed-By
+    echo "Configurando o repositório mod_pagespeed..."
+    echo "deb [signed-by=/usr/share/keyrings/google-mod-pagespeed.gpg] http://dl.google.com/linux/mod-pagespeed/deb/ stable main" | sudo tee /etc/apt/sources.list.d/mod-pagespeed.list > /dev/null
+
+    # Atualizar os repositórios
+    echo "Atualizando os repositórios..."
+    sudo apt-get update
     if [ $? -ne 0 ]; then
-        echo "Erro ao baixar o pacote mod_pagespeed. Verifique sua conexão com a internet."
+        echo "Erro ao atualizar os repositórios. Verifique sua configuração de rede."
         exit 1
     fi
 
-    # Instalar o pacote
-    sudo dpkg -i mod-pagespeed-*.deb
-    sudo apt -f install -y
+    # Instalar o mod_pagespeed
+    echo "Instalando o pacote mod_pagespeed..."
+    sudo apt-get install -y mod-pagespeed
     if [ $? -ne 0 ]; then
-        echo "Erro na instalação do mod_pagespeed. Tentando corrigir dependências..."
-        sudo apt-get install -f -y
-        if [ $? -ne 0 ]; then
-            echo "Erro ao corrigir dependências. Verifique os repositórios e tente novamente."
-            exit 1
-        fi
+        echo "Erro ao instalar o mod_pagespeed. Verifique os logs acima para detalhes."
+        exit 1
     fi
 
-    # Remover o pacote baixado para liberar espaço
-    rm -f mod-pagespeed-*.deb
-
-    # Reiniciar Apache para carregar mod_pagespeed
-    echo "Reiniciando Apache para carregar mod_pagespeed..."
+    # Reiniciar Apache para aplicar as mudanças
+    echo "Reiniciando o Apache..."
     sudo systemctl restart apache2
     if [ $? -eq 0 ]; then
         echo "mod_pagespeed instalado e Apache reiniciado com sucesso."
