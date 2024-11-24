@@ -301,13 +301,13 @@ function instalar_mod_pagespeed {
 
     # Adicionar a chave pública do Google com o método atualizado
     echo "Adicionando chave pública do Google..."
-    wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo tee /usr/share/keyrings/google-mod-pagespeed.gpg > /dev/null
+    wget -q -O /usr/share/keyrings/google-mod-pagespeed.gpg https://dl.google.com/linux/linux_signing_key.pub
     if [ $? -ne 0 ]; then
-        echo "Erro ao adicionar a chave pública do Google. Verifique sua conexão com a internet."
+        echo "Erro ao baixar a chave pública do Google. Verifique sua conexão com a internet."
         exit 1
     fi
 
-    # Adicionar o repositório mod_pagespeed ao sources.list.d com Signed-By
+    # Configurar o repositório mod_pagespeed com suporte a signed-by
     echo "Configurando o repositório mod_pagespeed..."
     echo "deb [signed-by=/usr/share/keyrings/google-mod-pagespeed.gpg] http://dl.google.com/linux/mod-pagespeed/deb/ stable main" | sudo tee /etc/apt/sources.list.d/mod-pagespeed.list > /dev/null
 
@@ -315,7 +315,7 @@ function instalar_mod_pagespeed {
     echo "Atualizando os repositórios..."
     sudo apt-get update
     if [ $? -ne 0 ]; then
-        echo "Erro ao atualizar os repositórios. Verifique sua configuração de rede."
+        echo "Erro ao atualizar os repositórios. Verifique sua configuração de rede e repositórios."
         exit 1
     fi
 
@@ -326,6 +326,9 @@ function instalar_mod_pagespeed {
         echo "Erro ao instalar o mod_pagespeed. Verifique os logs acima para detalhes."
         exit 1
     fi
+
+    # Remover pacotes .deb antigos, se existirem
+    rm -f mod-pagespeed-*.deb
 
     # Reiniciar Apache para aplicar as mudanças
     echo "Reiniciando o Apache..."
