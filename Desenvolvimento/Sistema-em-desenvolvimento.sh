@@ -295,52 +295,6 @@ EOF
     echo "Nginx configurado como Proxy Reverso para Varnish com sucesso."
 }
 
-# Função para instalar e configurar o mod_pagespeed do Google no Apache
-function instalar_mod_pagespeed {
-    echo "Instalando mod_pagespeed..."
-
-    # Adicionar a chave pública do Google com o método atualizado
-    echo "Adicionando chave pública do Google..."
-    wget -q -O /usr/share/keyrings/google-mod-pagespeed.gpg https://dl.google.com/linux/linux_signing_key.pub
-    if [ $? -ne 0 ]; then
-        echo "Erro ao baixar a chave pública do Google. Verifique sua conexão com a internet."
-        exit 1
-    fi
-
-    # Configurar o repositório mod_pagespeed com suporte a signed-by
-    echo "Configurando o repositório mod_pagespeed..."
-    echo "deb [signed-by=/usr/share/keyrings/google-mod-pagespeed.gpg] http://dl.google.com/linux/mod-pagespeed/deb/ stable main" | sudo tee /etc/apt/sources.list.d/mod-pagespeed.list > /dev/null
-
-    # Atualizar os repositórios
-    echo "Atualizando os repositórios..."
-    sudo apt-get update
-    if [ $? -ne 0 ]; then
-        echo "Erro ao atualizar os repositórios. Verifique sua configuração de rede e repositórios."
-        exit 1
-    fi
-
-    # Instalar o mod_pagespeed
-    echo "Instalando o pacote mod_pagespeed..."
-    sudo apt-get install -y mod-pagespeed
-    if [ $? -ne 0 ]; then
-        echo "Erro ao instalar o mod_pagespeed. Verifique os logs acima para detalhes."
-        exit 1
-    fi
-
-    # Remover pacotes .deb antigos, se existirem
-    rm -f mod-pagespeed-*.deb
-
-    # Reiniciar Apache para aplicar as mudanças
-    echo "Reiniciando o Apache..."
-    sudo systemctl restart apache2
-    if [ $? -eq 0 ]; then
-        echo "mod_pagespeed instalado e Apache reiniciado com sucesso."
-    else
-        echo "Erro ao reiniciar o Apache. Verifique os logs para mais detalhes."
-        exit 1
-    fi
-}
-
 # Função para instalar e configurar o phpMyAdmin
 function instalar_phpmyadmin {
     if ! dpkg -l | grep -qw phpmyadmin; then
@@ -477,7 +431,6 @@ function instalar_dependencias_iniciais {
     instalar_redis
     instalar_varnish
     instalar_nginx
-    instalar_mod_pagespeed
     instalar_phpmyadmin
     otimizar_php
     otimizar_apache
