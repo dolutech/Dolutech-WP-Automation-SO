@@ -5,6 +5,7 @@
 # Sou especialista em Cibersegurança, Big Data e Privacidade de dados
 # E-mail: lucas@dolutech.com
 # Site: https://dolutech.com
+# Licenciado sob GPLv3 - https://www.gnu.org/licenses/gpl-3.0.html
 # Sou apaixonado por Café que tal me pagar um?: https://www.paypal.com/paypalme/cataodemoraes
 
 # Nome do Sistema
@@ -65,6 +66,9 @@ function configurar_alias_wp {
         echo "alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
         source ~/.bashrc
     fi
+    # Configura o alias para a sessão atual
+    alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'
+    echo "Alias 'dolutech' configurado e ativado para a sessão atual."
 }
 
 # Função para instalar o WP-CLI
