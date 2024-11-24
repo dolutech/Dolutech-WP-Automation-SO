@@ -757,8 +757,9 @@ EOF
 
 # Função para listar todas as instalações do WordPress
 function listar_instalacoes {
-    echo "Instalações de WordPress:"
-    ls /var/www/*/public_html 2>/dev/null | sed 's|/var/www/\([^/]*\)/public_html|\1|' || echo "Nenhuma instalação encontrada."
+    echo "Domínios configurados para WordPress em /var/www:"
+    # Lista os diretórios em /var/www que parecem ser domínios
+    find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" || echo "Nenhuma instalação encontrada."
 }
 
 # Função para gerenciar instalações existentes de WordPress
