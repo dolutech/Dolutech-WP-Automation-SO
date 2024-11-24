@@ -59,13 +59,26 @@ function configurar_mensagem_boas_vindas {
     echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
 }
 
-# Função para criar o alias 'dolutech'
+# Função para criar o alias 'dolutech' e configurar o link simbólico
 function configurar_alias_wp {
     echo "Configurando alias 'dolutech'..."
+
+    # Adiciona o alias no ~/.bashrc para persistência
     if ! grep -q "alias dolutech=" ~/.bashrc; then
         echo "alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
         source ~/.bashrc
+        echo "Alias 'dolutech' configurado no ~/.bashrc."
     fi
+
+    # Cria o link simbólico em /usr/local/bin para o comando imediato
+    if [ ! -f /usr/local/bin/dolutech ]; then
+        echo "Criando link simbólico para o comando 'dolutech'..."
+        sudo ln -s /usr/local/bin/Dolutech-WP-Automation-SO.sh /usr/local/bin/dolutech
+        sudo chmod +x /usr/local/bin/Dolutech-WP-Automation-SO.sh
+        echo "Link simbólico 'dolutech' criado e pronto para uso."
+    fi
+
+    echo "Configuração de alias e link simbólico concluída."
 }
 
 # Função para instalar o WP-CLI
@@ -282,22 +295,6 @@ EOF
     echo "Nginx configurado como Proxy Reverso para Varnish com sucesso."
 }
 
-# Função para instalar e configurar o mod_pagespeed do Google no Apache
-function instalar_mod_pagespeed {
-    echo "Instalando mod_pagespeed..."
-    wget https://dl-ssl.google.com/dl/linux/direct/mod-pagespeed-stable_current_amd64.deb
-    sudo dpkg -i mod-pagespeed-*.deb
-    sudo apt -f install -y
-    if [ $? -ne 0 ]; then
-        echo "Erro na instalação do mod_pagespeed."
-        exit 1
-    fi
-
-    # Reiniciar Apache para carregar mod_pagespeed
-    sudo systemctl restart apache2
-    echo "mod_pagespeed instalado e Apache reiniciado com sucesso."
-}
-
 # Função para instalar e configurar o phpMyAdmin
 function instalar_phpmyadmin {
     if ! dpkg -l | grep -qw phpmyadmin; then
@@ -434,7 +431,6 @@ function instalar_dependencias_iniciais {
     instalar_redis
     instalar_varnish
     instalar_nginx
-    instalar_mod_pagespeed
     instalar_phpmyadmin
     otimizar_php
     otimizar_apache
@@ -728,14 +724,6 @@ DROP USER IF EXISTS '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-    # Remover arquivos de configuração do phpMyAdmin se existirem
-    echo "Removendo configuração do phpMyAdmin se existir..."
-    if [ -f "/etc/apache2/sites-available/phpmyadmin.conf" ]; then
-        sudo a2dissite phpmyadmin.conf
-        sudo rm "/etc/apache2/sites-available/phpmyadmin.conf"
-        sudo systemctl reload apache2
-    fi
-
     # Recarregar o Nginx para aplicar as mudanças
     sudo systemctl reload nginx
 
@@ -744,38 +732,212 @@ EOF
 
 # Função para listar todas as instalações do WordPress
 function listar_instalacoes {
-    echo "Instalações de WordPress:"
-    ls /var/www/*/public_html 2>/dev/null | sed 's|/var/www/\([^/]*\)/public_html|\1|' || echo "Nenhuma instalação encontrada."
+    echo "Domínios configurados para WordPress em /var/www:"
+    # Lista os diretórios em /var/www que parecem ser domínios
+    find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" || echo "Nenhuma instalação encontrada."
 }
 
-# Função para gerenciar instalações existentes de WordPress
-function menu_wp {
-    echo "================= Menu Dolutech WP Automation SO ================="
-    echo "1. Instalar nova configuração do WordPress"
-    echo "2. Listar todas as instalações do WordPress"
-    echo "3. Remover instalação do WordPress"
-    echo "4. Sair"
-    echo "=================================================================="
-    read -p "Escolha uma opção: " OPCAO
+# Função para verificar e instalar zip e unzip
+function verificar_zip {
+    echo "Verificando se zip e unzip estão instalados..."
+    if ! command -v zip &> /dev/null || ! command -v unzip &> /dev/null; then
+        echo "Instalando zip e unzip..."
+        sudo apt-get update && sudo apt-get install -y zip unzip
+        if [ $? -ne 0 ]; then
+            echo "Erro ao instalar zip e unzip. Verifique a conexão com a internet."
+            exit 1
+        fi
+        echo "zip e unzip instalados com sucesso."
+    else
+        echo "zip e unzip já estão instalados."
+    fi
+}
 
-    case $OPCAO in
-        1)
-            instalar_wordpress
-            ;;
-        2)
-            listar_instalacoes
-            ;;
-        3)
-            remover_instalacao
-            ;;
-        4)
-            echo "Saindo do sistema."
-            exit 0
-            ;;
-        *)
-            echo "Opção inválida!"
-            ;;
-    esac
+# Função para fazer backup de uma instalação do WordPress
+function fazer_backup {
+    # Verificar zip e unzip
+    verificar_zip
+
+    # Listar domínios disponíveis
+    echo "Domínios configurados para WordPress em /var/www:"
+    DOMINIOS=$(find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+    
+    if [ -z "$DOMINIOS" ]; then
+        echo "Nenhum domínio encontrado."
+        return
+    fi
+
+    echo "$DOMINIOS"
+    read -p "Digite o domínio para fazer o backup: " DOMINIO
+
+    if [ ! -d "/var/www/$DOMINIO/public_html" ]; then
+        echo "Domínio inválido ou pasta não encontrada."
+        return
+    fi
+
+    # Criar a pasta de backup, se não existir
+    BACKUP_DIR="/backup"
+    [ ! -d "$BACKUP_DIR" ] && sudo mkdir -p "$BACKUP_DIR" && sudo chmod 755 "$BACKUP_DIR"
+
+    # Caminhos e nomes
+    DATA=$(date +"%Y%m%d-%H%M%S")
+    BACKUP_ZIP="$BACKUP_DIR/${DOMINIO}_backup_$DATA.zip"
+    DB_BACKUP_DIR="/var/www/$DOMINIO/public_html/db"
+
+    # Criar pasta db dentro do public_html se não existir
+    [ ! -d "$DB_BACKUP_DIR" ] && mkdir -p "$DB_BACKUP_DIR"
+
+    # Ler informações do wp-config.php
+    CONFIG_FILE="/var/www/$DOMINIO/public_html/wp-config.php"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Arquivo wp-config.php não encontrado em /var/www/$DOMINIO/public_html."
+        return
+    fi
+
+    DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
+    DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
+
+    if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
+        echo "Não foi possível obter informações do banco de dados."
+        return
+    fi
+
+    echo "Usuário do banco de dados: $DB_USER"
+    echo "Nome do banco de dados: $DB_NAME"
+
+    # Fazer dump do banco de dados
+    echo "Exportando banco de dados..."
+    sudo mysqldump -u "$DB_USER" -p "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
+    if [ $? -ne 0 ]; then
+        echo "Erro ao exportar o banco de dados. Verifique as credenciais no wp-config.php."
+        return
+    fi
+
+    # Compactar tudo
+    echo "Compactando backup..."
+    sudo zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Erro ao criar o arquivo ZIP. Verifique se o zip está corretamente instalado."
+        return
+    fi
+
+    echo "Backup criado com sucesso: $BACKUP_ZIP"
+
+    # Remover a pasta /db por segurança
+    echo "Removendo pasta temporária /db por segurança..."
+    sudo rm -rf "$DB_BACKUP_DIR"
+    echo "Pasta /db removida."
+
+    # Perguntar se deseja enviar para FTP
+    read -p "Deseja enviar o backup para um servidor FTP? (s/n): " ENVIAR_FTP
+    if [ "$ENVIAR_FTP" == "s" ]; then
+        if ! command -v lftp &> /dev/null; then
+            echo "Instalando lftp..."
+            sudo apt-get update && sudo apt-get install -y lftp
+        fi
+
+        read -p "Digite o endereço do servidor FTP: " FTP_SERVIDOR
+        read -p "Digite o usuário do FTP: " FTP_USUARIO
+        read -s -p "Digite a senha do FTP: " FTP_SENHA
+        echo
+        read -p "Digite a porta do FTP (padrão: 21): " FTP_PORTA
+        FTP_PORTA=${FTP_PORTA:-21}
+        read -p "Digite a pasta de destino no FTP (deixe em branco para a raiz): " FTP_PASTA
+        FTP_PASTA=${FTP_PASTA:-"/"}
+
+        echo "Enviando backup para FTP..."
+        lftp -u "$FTP_USUARIO","$FTP_SENHA" -p "$FTP_PORTA" "$FTP_SERVIDOR" <<EOF
+        put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
+        bye
+EOF
+        if [ $? -eq 0 ]; then
+            echo "Backup enviado com sucesso para o servidor FTP."
+        else
+            echo "Erro ao enviar o backup para o servidor FTP."
+        fi
+    fi
+
+    # Perguntar se deseja agendar backup automático
+    read -p "Deseja agendar backups automáticos diários? (s/n): " AGENDAR_BACKUP
+    if [ "$AGENDAR_BACKUP" == "s" ]; then
+        read -p "Digite a hora para o backup diário (0-23): " HORA
+        read -p "O backup será: (1) Local ou (2) Enviado para FTP? Escolha: " OPCAO_BACKUP
+        CRON_JOB="$HORA * * * * sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh backup $DOMINIO $OPCAO_BACKUP"
+        (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+        echo "Backup automático agendado para o domínio $DOMINIO às $HORA horas diariamente."
+    fi
+
+    # Mostrar rotinas de backup automáticas ativas
+    read -p "Deseja ver as rotinas de backup automáticas ativas? (s/n): " VER_ROTINAS
+    if [ "$VER_ROTINAS" == "s" ]; then
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup"
+    fi
+
+    # Remoção de backups automáticos
+    read -p "Deseja remover alguma rotina de backup automática? (s/n): " REMOVER_ROTINA
+    if [ "$REMOVER_ROTINA" == "s" ]; then
+        echo "Rotinas de backup automáticas ativas:"
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup" | nl
+        read -p "Digite o número da rotina que deseja remover: " NUMERO
+        NOVA_CRONTAB=$(crontab -l | sed "${NUMERO}d")
+        echo "$NOVA_CRONTAB" | crontab -
+        echo "Rotina de backup removida."
+    fi
+}
+
+# Função para executar backups automáticos
+function fazer_backup_automatico {
+    local DOMINIO=$1
+    local OPCAO_BACKUP=$2
+    echo "Executando backup automático para o domínio: $DOMINIO"
+
+    if [ "$OPCAO_BACKUP" == "2" ]; then
+        echo "Enviando backup automático para FTP..."
+        fazer_backup "$DOMINIO" "ftp"
+    else
+        echo "Realizando backup local."
+        fazer_backup "$DOMINIO" "local"
+    fi
+}
+
+# Menu principal
+function menu_wp {
+    while true; do
+        echo "================= Menu Dolutech WP Automation SO ================="
+        echo "1. Instalar nova configuração do WordPress"
+        echo "2. Listar todas as instalações do WordPress"
+        echo "3. Fazer Backup de uma Instalação do WordPress"
+        echo "4. Remover instalação do WordPress"
+        echo "5. Fazer, Ver e Remover Backups Automáticos"
+        echo "6. Sair"
+        echo "=================================================================="
+        read -p "Escolha uma opção: " OPCAO
+
+        case $OPCAO in
+            1)
+                instalar_wordpress
+                ;;
+            2)
+                listar_instalacoes
+                ;;
+            3)
+                fazer_backup
+                ;;
+            4)
+                remover_instalacao
+                ;;
+            5)
+                fazer_backup_automatico
+                ;;
+            6)
+                echo "Saindo do sistema."
+                exit 0
+                ;;
+            *)
+                echo "Opção inválida!"
+                ;;
+        esac
+    done
 }
 
 # Função para verificar se as dependências já estão instaladas
