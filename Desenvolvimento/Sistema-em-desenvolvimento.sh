@@ -908,7 +908,7 @@ function menu_wp {
         echo "2. Listar todas as instalações do WordPress"
         echo "3. Fazer Backup de uma Instalação do WordPress"
         echo "4. Remover instalação do WordPress"
-        echo "5. Ver e Remover Backups Automáticos"
+        echo "5. Fazer, Ver e Remover Backups Automáticos"
         echo "6. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
