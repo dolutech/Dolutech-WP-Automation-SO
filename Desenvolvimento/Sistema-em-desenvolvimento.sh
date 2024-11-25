@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 # Dolutech WP Automation SO - Instalação Completa do WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, mod_pagespeed
@@ -60,26 +59,30 @@ function configurar_mensagem_boas_vindas {
     echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
 }
 
-# Função para criar o alias 'dolutech' e configurar o link simbólico
-function configurar_alias_wp {
-    echo "Configurando alias 'dolutech'..."
+# Função para configurar o comando 'dolutech'
+function configurar_comando_dolutech {
+    echo "Configurando o comando 'dolutech'..."
 
-    # Adiciona o alias no ~/.bashrc para persistência
-    if ! grep -q "alias dolutech=" ~/.bashrc; then
-        echo "alias dolutech='sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh'" >> ~/.bashrc
-        source ~/.bashrc
-        echo "Alias 'dolutech' configurado no ~/.bashrc."
+    # Caminho completo para o script atual
+    SCRIPT_PATH="$(readlink -f "$0")"
+
+    # Verifica se o script existe
+    if [ ! -f "$SCRIPT_PATH" ]; then
+        echo "Erro: O script '$SCRIPT_PATH' não foi encontrado."
+        return 1
     fi
 
-    # Cria o link simbólico em /usr/local/bin para o comando imediato
+    # Copia o script para /usr/local/bin e define permissão de execução
     if [ ! -f /usr/local/bin/dolutech ]; then
-        echo "Criando link simbólico para o comando 'dolutech'..."
-        sudo ln -s /usr/local/bin/Dolutech-WP-Automation-SO.sh /usr/local/bin/dolutech
-        sudo chmod +x /usr/local/bin/Dolutech-WP-Automation-SO.sh
-        echo "Link simbólico 'dolutech' criado e pronto para uso."
+        echo "Copiando o script para /usr/local/bin..."
+        sudo cp "$SCRIPT_PATH" /usr/local/bin/dolutech
+        sudo chmod +x /usr/local/bin/dolutech
+        echo "Script 'dolutech' copiado para /usr/local/bin e pronto para uso."
+    else
+        echo "O comando 'dolutech' já está configurado."
     fi
 
-    echo "Configuração de alias e link simbólico concluída."
+    echo "Configuração do comando 'dolutech' concluída."
 }
 
 # Função para instalar o WP-CLI
@@ -762,18 +765,14 @@ function fazer_backup {
     # Listar domínios disponíveis
     echo "Domínios configurados para WordPress em /var/www:"
     DOMINIOS=$(find /var/www -mindepth 1 -maxdepth 1 -type d -not -name "html" -not -name ".*" | sed 's|/var/www/||' | grep -E "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-
+    
     if [ -z "$DOMINIOS" ]; then
         echo "Nenhum domínio encontrado."
         return
     fi
 
     echo "$DOMINIOS"
-    read -p "Digite o domínio para fazer o backup (ou 'voltar' para retornar ao menu): " DOMINIO
-
-    if [ "$DOMINIO" == "voltar" ]; then
-        return
-    fi
+    read -p "Digite o domínio para fazer o backup: " DOMINIO
 
     if [ ! -d "/var/www/$DOMINIO/public_html" ]; then
         echo "Domínio inválido ou pasta não encontrada."
@@ -799,12 +798,10 @@ function fazer_backup {
         return
     fi
 
-    # Extrair informações do banco de dados
     DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
     DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
-    DB_PASSWORD=$(grep "DB_PASSWORD" "$CONFIG_FILE" | cut -d "'" -f 4)
 
-    if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ]; then
+    if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
         echo "Não foi possível obter informações do banco de dados."
         return
     fi
@@ -814,7 +811,7 @@ function fazer_backup {
 
     # Fazer dump do banco de dados
     echo "Exportando banco de dados..."
-    mysqldump -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
+    sudo mysqldump -u "$DB_USER" -p "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
     if [ $? -ne 0 ]; then
         echo "Erro ao exportar o banco de dados. Verifique as credenciais no wp-config.php."
         return
@@ -822,7 +819,7 @@ function fazer_backup {
 
     # Compactar tudo
     echo "Compactando backup..."
-    zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
+    sudo zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo "Erro ao criar o arquivo ZIP. Verifique se o zip está corretamente instalado."
         return
@@ -832,7 +829,7 @@ function fazer_backup {
 
     # Remover a pasta /db por segurança
     echo "Removendo pasta temporária /db por segurança..."
-    rm -rf "$DB_BACKUP_DIR"
+    sudo rm -rf "$DB_BACKUP_DIR"
     echo "Pasta /db removida."
 
     # Perguntar se deseja enviar para FTP
@@ -843,64 +840,19 @@ function fazer_backup {
             sudo apt-get update && sudo apt-get install -y lftp
         fi
 
-        # Gerenciar servidores FTP configurados
-        FTP_CONFIG_FILE="$HOME/.ftp_servers"
-        touch "$FTP_CONFIG_FILE"
-        chmod 600 "$FTP_CONFIG_FILE"
-
-        # Ler servidores FTP existentes
-        if [ -s "$FTP_CONFIG_FILE" ]; then
-            echo "Servidores FTP configurados:"
-            SERVIDORES=$(awk -F'|' '{print NR ") " $1}' "$FTP_CONFIG_FILE")
-            echo "$SERVIDORES"
-            echo "$(( $(wc -l < "$FTP_CONFIG_FILE") + 1 )) ) Adicionar novo servidor FTP"
-            echo "$(( $(wc -l < "$FTP_CONFIG_FILE") + 2 )) ) Voltar ao menu"
-            read -p "Selecione o servidor FTP: " SELECAO
-
-            TOTAL_SERVIDORES=$(wc -l < "$FTP_CONFIG_FILE")
-            if [ "$SELECAO" -ge 1 ] && [ "$SELECAO" -le "$TOTAL_SERVIDORES" ]; then
-                # Ler detalhes do servidor selecionado
-                SERVER_LINE=$(sed -n "${SELECAO}p" "$FTP_CONFIG_FILE")
-                IFS='|' read -r SERVER_NAME FTP_SERVIDOR FTP_USUARIO FTP_SENHA FTP_PORTA FTP_PASTA <<< "$SERVER_LINE"
-            elif [ "$SELECAO" -eq $((TOTAL_SERVIDORES + 1)) ]; then
-                # Adicionar novo servidor
-                read -p "Digite o nome para o servidor FTP: " SERVER_NAME
-                read -p "Digite o endereço do servidor FTP: " FTP_SERVIDOR
-                read -p "Digite o usuário do FTP: " FTP_USUARIO
-                read -s -p "Digite a senha do FTP: " FTP_SENHA
-                echo
-                read -p "Digite a porta do FTP (padrão: 21): " FTP_PORTA
-                FTP_PORTA=${FTP_PORTA:-21}
-                read -p "Digite a pasta de destino no FTP (deixe em branco para a raiz): " FTP_PASTA
-                FTP_PASTA=${FTP_PASTA:-"/"}
-                # Salvar no arquivo de configuração
-                echo "$SERVER_NAME|$FTP_SERVIDOR|$FTP_USUARIO|$FTP_SENHA|$FTP_PORTA|$FTP_PASTA" >> "$FTP_CONFIG_FILE"
-            elif [ "$SELECAO" -eq $((TOTAL_SERVIDORES + 2)) ]; then
-                return
-            else
-                echo "Seleção inválida. Retornando ao menu."
-                return
-            fi
-        else
-            # Nenhum servidor configurado
-            echo "Nenhum servidor FTP configurado."
-            read -p "Digite o nome para o servidor FTP: " SERVER_NAME
-            read -p "Digite o endereço do servidor FTP: " FTP_SERVIDOR
-            read -p "Digite o usuário do FTP: " FTP_USUARIO
-            read -s -p "Digite a senha do FTP: " FTP_SENHA
-            echo
-            read -p "Digite a porta do FTP (padrão: 21): " FTP_PORTA
-            FTP_PORTA=${FTP_PORTA:-21}
-            read -p "Digite a pasta de destino no FTP (deixe em branco para a raiz): " FTP_PASTA
-            FTP_PASTA=${FTP_PASTA:-"/"}
-            # Salvar no arquivo de configuração
-            echo "$SERVER_NAME|$FTP_SERVIDOR|$FTP_USUARIO|$FTP_SENHA|$FTP_PORTA|$FTP_PASTA" >> "$FTP_CONFIG_FILE"
-        fi
+        read -p "Digite o endereço do servidor FTP: " FTP_SERVIDOR
+        read -p "Digite o usuário do FTP: " FTP_USUARIO
+        read -s -p "Digite a senha do FTP: " FTP_SENHA
+        echo
+        read -p "Digite a porta do FTP (padrão: 21): " FTP_PORTA
+        FTP_PORTA=${FTP_PORTA:-21}
+        read -p "Digite a pasta de destino no FTP (deixe em branco para a raiz): " FTP_PASTA
+        FTP_PASTA=${FTP_PASTA:-"/"}
 
         echo "Enviando backup para FTP..."
         lftp -u "$FTP_USUARIO","$FTP_SENHA" -p "$FTP_PORTA" "$FTP_SERVIDOR" <<EOF
-put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
-bye
+        put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
+        bye
 EOF
         if [ $? -eq 0 ]; then
             echo "Backup enviado com sucesso para o servidor FTP."
@@ -914,33 +866,26 @@ EOF
     if [ "$AGENDAR_BACKUP" == "s" ]; then
         read -p "Digite a hora para o backup diário (0-23): " HORA
         read -p "O backup será: (1) Local ou (2) Enviado para FTP? Escolha: " OPCAO_BACKUP
-        if [ "$OPCAO_BACKUP" == "2" ]; then
-            # Selecionar servidor FTP
-            FTP_CONFIG_FILE="$HOME/.ftp_servers"
-            if [ ! -s "$FTP_CONFIG_FILE" ]; then
-                echo "Nenhum servidor FTP configurado. Configure um servidor primeiro."
-                return
-            fi
-            echo "Servidores FTP configurados:"
-            SERVIDORES=$(awk -F'|' '{print NR ") " $1}' "$FTP_CONFIG_FILE")
-            echo "$SERVIDORES"
-            read -p "Selecione o servidor FTP para o backup automático: " SELECAO
-            SERVER_LINE=$(sed -n "${SELECAO}p" "$FTP_CONFIG_FILE")
-            if [ -z "$SERVER_LINE" ]; then
-                echo "Seleção inválida."
-                return
-            fi
-            # Salvar índice do servidor FTP selecionado
-            FTP_INDEX="$SELECAO"
-        fi
-        # Agendar backup no crontab
-        if [ "$OPCAO_BACKUP" == "2" ]; then
-            CRON_JOB="0 $HORA * * * /bin/bash $0 backup_automatico \"$DOMINIO\" \"$OPCAO_BACKUP\" \"$FTP_INDEX\""
-        else
-            CRON_JOB="0 $HORA * * * /bin/bash $0 backup_automatico \"$DOMINIO\" \"$OPCAO_BACKUP\""
-        fi
+        CRON_JOB="$HORA * * * * sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh backup $DOMINIO $OPCAO_BACKUP"
         (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
         echo "Backup automático agendado para o domínio $DOMINIO às $HORA horas diariamente."
+    fi
+
+    # Mostrar rotinas de backup automáticas ativas
+    read -p "Deseja ver as rotinas de backup automáticas ativas? (s/n): " VER_ROTINAS
+    if [ "$VER_ROTINAS" == "s" ]; then
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup"
+    fi
+
+    # Remoção de backups automáticos
+    read -p "Deseja remover alguma rotina de backup automática? (s/n): " REMOVER_ROTINA
+    if [ "$REMOVER_ROTINA" == "s" ]; then
+        echo "Rotinas de backup automáticas ativas:"
+        crontab -l | grep "Dolutech-WP-Automation-SO.sh backup" | nl
+        read -p "Digite o número da rotina que deseja remover: " NUMERO
+        NOVA_CRONTAB=$(crontab -l | sed "${NUMERO}d")
+        echo "$NOVA_CRONTAB" | crontab -
+        echo "Rotina de backup removida."
     fi
 }
 
@@ -948,156 +893,16 @@ EOF
 function fazer_backup_automatico {
     local DOMINIO=$1
     local OPCAO_BACKUP=$2
-    local FTP_INDEX=$3
-
     echo "Executando backup automático para o domínio: $DOMINIO"
 
     if [ "$OPCAO_BACKUP" == "2" ]; then
         echo "Enviando backup automático para FTP..."
-
-        # Verificar zip e unzip
-        verificar_zip
-
-        # Caminhos e nomes
-        BACKUP_DIR="/backup"
-        [ ! -d "$BACKUP_DIR" ] && mkdir -p "$BACKUP_DIR"
-        DATA=$(date +"%Y%m%d-%H%M%S")
-        BACKUP_ZIP="$BACKUP_DIR/${DOMINIO}_backup_$DATA.zip"
-        DB_BACKUP_DIR="/var/www/$DOMINIO/public_html/db"
-
-        # Criar pasta db dentro do public_html se não existir
-        [ ! -d "$DB_BACKUP_DIR" ] && mkdir -p "$DB_BACKUP_DIR"
-
-        # Ler informações do wp-config.php
-        CONFIG_FILE="/var/www/$DOMINIO/public_html/wp-config.php"
-        if [ ! -f "$CONFIG_FILE" ]; then
-            echo "Arquivo wp-config.php não encontrado em /var/www/$DOMINIO/public_html."
-            return
-        fi
-
-        # Extrair informações do banco de dados
-        DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
-        DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
-        DB_PASSWORD=$(grep "DB_PASSWORD" "$CONFIG_FILE" | cut -d "'" -f 4)
-
-        if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ]; then
-            echo "Não foi possível obter informações do banco de dados."
-            return
-        fi
-
-        # Fazer dump do banco de dados
-        mysqldump -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
-        if [ $? -ne 0 ]; then
-            echo "Erro ao exportar o banco de dados."
-            return
-        fi
-
-        # Compactar tudo
-        zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
-            echo "Erro ao criar o arquivo ZIP."
-            return
-        fi
-
-        # Remover a pasta /db por segurança
-        rm -rf "$DB_BACKUP_DIR"
-
-        # Enviar para o servidor FTP selecionado
-        FTP_CONFIG_FILE="$HOME/.ftp_servers"
-        SERVER_LINE=$(sed -n "${FTP_INDEX}p" "$FTP_CONFIG_FILE")
-        IFS='|' read -r SERVER_NAME FTP_SERVIDOR FTP_USUARIO FTP_SENHA FTP_PORTA FTP_PASTA <<< "$SERVER_LINE"
-
-        lftp -u "$FTP_USUARIO","$FTP_SENHA" -p "$FTP_PORTA" "$FTP_SERVIDOR" <<EOF
-put "$BACKUP_ZIP" -o "$FTP_PASTA/$(basename "$BACKUP_ZIP")"
-bye
-EOF
-        if [ $? -eq 0 ]; then
-            echo "Backup enviado com sucesso para o servidor FTP."
-        else
-            echo "Erro ao enviar o backup para o servidor FTP."
-        fi
-
+        fazer_backup "$DOMINIO" "ftp"
     else
         echo "Realizando backup local."
-
-        # Verificar zip e unzip
-        verificar_zip
-
-        # Caminhos e nomes
-        BACKUP_DIR="/backup"
-        [ ! -d "$BACKUP_DIR" ] && mkdir -p "$BACKUP_DIR"
-        DATA=$(date +"%Y%m%d-%H%M%S")
-        BACKUP_ZIP="$BACKUP_DIR/${DOMINIO}_backup_$DATA.zip"
-        DB_BACKUP_DIR="/var/www/$DOMINIO/public_html/db"
-
-        # Criar pasta db dentro do public_html se não existir
-        [ ! -d "$DB_BACKUP_DIR" ] && mkdir -p "$DB_BACKUP_DIR"
-
-        # Ler informações do wp-config.php
-        CONFIG_FILE="/var/www/$DOMINIO/public_html/wp-config.php"
-        if [ ! -f "$CONFIG_FILE" ]; then
-            echo "Arquivo wp-config.php não encontrado em /var/www/$DOMINIO/public_html."
-            return
-        fi
-
-        # Extrair informações do banco de dados
-        DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
-        DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
-        DB_PASSWORD=$(grep "DB_PASSWORD" "$CONFIG_FILE" | cut -d "'" -f 4)
-
-        if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ]; then
-            echo "Não foi possível obter informações do banco de dados."
-            return
-        fi
-
-        # Fazer dump do banco de dados
-        mysqldump -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$DB_BACKUP_DIR/${DB_NAME}_backup.sql"
-        if [ $? -ne 0 ]; then
-            echo "Erro ao exportar o banco de dados."
-            return
-        fi
-
-        # Compactar tudo
-        zip -r "$BACKUP_ZIP" "/var/www/$DOMINIO/public_html" > /dev/null 2>&1
-        if [ $? -ne 0 ]; then
-            echo "Erro ao criar o arquivo ZIP."
-            return
-        fi
-
-        # Remover a pasta /db por segurança
-        rm -rf "$DB_BACKUP_DIR"
-
-        echo "Backup automático local criado com sucesso: $BACKUP_ZIP"
+        fazer_backup "$DOMINIO" "local"
     fi
 }
-
-# Função para ver e remover backups automáticos
-function ver_remover_backups_automaticos {
-    echo "Rotinas de backup automáticas ativas:"
-    crontab -l | grep "$0 backup_automatico" | nl
-    if [ $? -ne 0 ]; then
-        echo "Nenhuma rotina de backup automático encontrada."
-        return
-    fi
-
-    read -p "Deseja remover alguma rotina de backup automática? (s/n): " REMOVER_ROTINA
-    if [ "$REMOVER_ROTINA" == "s" ]; then
-        crontab -l | grep "$0 backup_automatico" | nl
-        read -p "Digite o número da rotina que deseja remover: " NUMERO
-        NUMERO_LINHA=$(crontab -l | grep -n "$0 backup_automatico" | sed -n "${NUMERO}p" | cut -d: -f1)
-        if [ -z "$NUMERO_LINHA" ]; then
-            echo "Rotina não encontrada."
-            return
-        fi
-        NOVA_CRONTAB=$(crontab -l | sed "${NUMERO_LINHA}d")
-        echo "$NOVA_CRONTAB" | crontab -
-        echo "Rotina de backup removida."
-    else
-        echo "Nenhuma rotina removida."
-    fi
-}
-
-
 
 # Menu principal
 function menu_wp {
@@ -1107,7 +912,7 @@ function menu_wp {
         echo "2. Listar todas as instalações do WordPress"
         echo "3. Fazer Backup de uma Instalação do WordPress"
         echo "4. Remover instalação do WordPress"
-        echo "5. Ver e Remover Backups Automáticos"
+        echo "5. Fazer, Ver e Remover Backups Automáticos"
         echo "6. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
@@ -1126,7 +931,7 @@ function menu_wp {
                 remover_instalacao
                 ;;
             5)
-                ver_remover_backups_automaticos
+                fazer_backup_automatico
                 ;;
             6)
                 echo "Saindo do sistema."
@@ -1211,13 +1016,7 @@ if ! grep -q "$NOME_SISTEMA" /etc/motd; then
     configurar_alias_wp
 fi
 
-# Execução do script: menu principal ou tarefa específica
-if [ "$1" == "backup_automatico" ]; then
-    # Executar backup automático
-    fazer_backup_automatico "$2" "$3" "$4"
-else
-    # Exibir menu principal em loop
-    while true; do
-        menu_wp
-    done
-fi
+# Execução do menu inicial
+while true; do
+    menu_wp
+done
