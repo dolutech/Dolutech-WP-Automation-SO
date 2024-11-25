@@ -898,7 +898,7 @@ EOF
         if [ "$AGENDAR_BACKUP" == "s" ]; then
             read -p "Digite a hora para o backup diário (0-23): " HORA
             read -p "O backup será: (1) Local ou (2) Enviado para FTP? Escolha: " OPCAO_BACKUP
-            if [ "$OPCAO_BACKUP" == "2" ]; então
+            if [ "$OPCAO_BACKUP" == "2" ]; then
                 BACKUP_OPTION="ftp"
             else
                 BACKUP_OPTION="local"
