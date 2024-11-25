@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # Dolutech WP Automation SO - Instalação Completa do WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, mod_pagespeed
@@ -1096,6 +1097,8 @@ function ver_remover_backups_automaticos {
     fi
 }
 
+
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -1135,13 +1138,6 @@ function menu_wp {
         esac
     done
 }
-
-# Chamar menu principal ou executar backup automático
-if [ "$1" == "backup_automatico" ]; then
-    fazer_backup_automatico "$2" "$3" "$4"
-else
-    menu_wp
-fi
 
 # Função para verificar se as dependências já estão instaladas
 function verificar_dependencias {
@@ -1215,7 +1211,13 @@ if ! grep -q "$NOME_SISTEMA" /etc/motd; then
     configurar_alias_wp
 fi
 
-# Execução do menu inicial
-while true; do
-    menu_wp
-done
+# Execução do script: menu principal ou tarefa específica
+if [ "$1" == "backup_automatico" ]; then
+    # Executar backup automático
+    fazer_backup_automatico "$2" "$3" "$4"
+else
+    # Exibir menu principal em loop
+    while true; do
+        menu_wp
+    done
+fi
