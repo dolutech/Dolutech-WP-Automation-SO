@@ -1,0 +1,1 @@
+sudo apt update && sudo apt upgrade -y && curl -o /usr/local/bin/Dolutech-WP-Automation-SO.sh https://raw.githubusercontent.com/dolutech/Dolutech-WP-Automation-SO/main/Desenvolvimento/Sistema-em-desenvolvimento.sh && sudo chmod +x /usr/local/bin/Dolutech-WP-Automation-SO.sh && sudo /usr/local/bin/Dolutech-WP-Automation-SO.sh
