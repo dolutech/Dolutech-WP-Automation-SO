@@ -49,8 +49,8 @@ if [ "$VERSAO_REMOTA" != "$VERSAO_LOCAL" ]; then
     echo "Script atualizado para a versão $VERSAO_REMOTA"
     # Atualiza a versão local no arquivo version.txt
     echo "Version=$VERSAO_REMOTA" > "$DIR_SCRIPT/version.txt"
-    VERSAO_LOCAL=$VERSAO_REMOTA  # Atualiza a variável para a nova versão
-    configurar_mensagem_boas_vindas  # Atualiza a mensagem de boas-vindas
+    echo "Reiniciando o script com a nova versão..."
+    exec $SCRIPT_LOCAL "$@"
 else
     echo "O script já está atualizado."
 fi
@@ -1295,7 +1295,7 @@ else
 fi
 
 # Configurar mensagem de boas-vindas e alias, se não estiverem configurados
-if ! grep -q "$NOME_SISTEMA" /etc/motd; then
+if ! grep -q "Versão atual: $VERSAO_LOCAL" /etc/motd; then
     configurar_mensagem_boas_vindas
     configurar_alias_wp
 fi
