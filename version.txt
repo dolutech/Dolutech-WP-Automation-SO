@@ -1,2 +1,2 @@
 #Versão do Sistema Dolutech WP Automation SO
-Version=0.2
+Version=0.2.1
