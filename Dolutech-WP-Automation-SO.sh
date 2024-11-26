@@ -49,6 +49,8 @@ if [ "$VERSAO_REMOTA" != "$VERSAO_LOCAL" ]; then
     echo "Script atualizado para a versão $VERSAO_REMOTA"
     # Atualiza a versão local no arquivo version.txt
     echo "Version=$VERSAO_REMOTA" > "$DIR_SCRIPT/version.txt"
+    VERSAO_LOCAL=$VERSAO_REMOTA  # Atualiza a variável para a nova versão
+    configurar_mensagem_boas_vindas  # Atualiza a mensagem de boas-vindas
 else
     echo "O script já está atualizado."
 fi
@@ -954,6 +956,234 @@ if [ "$1" == "backup" ]; then
     exit 0
 fi
 
+# Função para restaurar um backup
+function restaurar_backup {
+    # Definir o PATH para garantir que os comandos sejam encontrados quando executados via cron ou shell
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Listar backups disponíveis em /backup
+    BACKUP_DIR="/backup"
+    echo "Backups disponíveis em $BACKUP_DIR:"
+    BACKUPS=($(ls -1 "$BACKUP_DIR" | grep -E '\.zip$'))
+    
+    if [ ${#BACKUPS[@]} -eq 0 ]; then
+        echo "Nenhum backup encontrado em $BACKUP_DIR."
+        return
+    fi
+
+    # Exibir a lista de backups numerados
+    for i in "${!BACKUPS[@]}"; do
+        echo "$((i+1)). ${BACKUPS[$i]}"
+    done
+
+    # Solicitar ao usuário que escolha um backup para restaurar
+    read -p "Digite o número do backup que deseja restaurar: " NUM_BACKUP
+    if ! [[ "$NUM_BACKUP" =~ ^[0-9]+$ ]] || [ "$NUM_BACKUP" -lt 1 ] || [ "$NUM_BACKUP" -gt ${#BACKUPS[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    BACKUP_FILE="${BACKUPS[$((NUM_BACKUP-1))]}"
+    BACKUP_PATH="$BACKUP_DIR/$BACKUP_FILE"
+    echo "Backup selecionado: $BACKUP_FILE"
+
+    # Extrair o backup para um diretório temporário
+    TEMP_DIR="/tmp/restore_${RANDOM}"
+    mkdir -p "$TEMP_DIR"
+    echo "Extraindo o backup para $TEMP_DIR..."
+    unzip -q "$BACKUP_PATH" -d "$TEMP_DIR"
+    if [ $? -ne 0 ]; then
+        echo "Erro ao extrair o backup."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    # Identificar o domínio a partir do backup
+    if [ -d "$TEMP_DIR/var/www/" ]; then
+        DOMAIN_NAME=$(ls "$TEMP_DIR/var/www/")
+        WP_PATH="$TEMP_DIR/var/www/$DOMAIN_NAME/public_html"
+    else
+        echo "Estrutura de backup inválida."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    echo "Domínio identificado: $DOMAIN_NAME"
+
+    # Restaurar os arquivos para /var/www/$DOMAIN_NAME/public_html
+    echo "Restaurando arquivos para /var/www/$DOMAIN_NAME/public_html..."
+    sudo mkdir -p "/var/www/$DOMAIN_NAME/public_html"
+    sudo cp -R "$WP_PATH/"* "/var/www/$DOMAIN_NAME/public_html/"
+    sudo chown -R www-data:www-data "/var/www/$DOMAIN_NAME/public_html"
+    sudo chmod -R 755 "/var/www/$DOMAIN_NAME/public_html"
+
+    # Verificar e criar o arquivo .htaccess se não existir
+    HTACCESS_FILE="/var/www/$DOMAIN_NAME/public_html/.htaccess"
+    if [ ! -f "$HTACCESS_FILE" ]; then
+        echo "Criando o arquivo .htaccess na raiz de /var/www/${DOMAIN_NAME}/public_html..."
+        sudo bash -c "cat > $HTACCESS_FILE" <<EOL
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+EOL
+
+        # Definir permissões corretas para o arquivo .htaccess
+        sudo chown www-data:www-data "$HTACCESS_FILE"
+        sudo chmod 644 "$HTACCESS_FILE"
+
+        echo "Arquivo .htaccess criado e permissões definidas."
+    else
+        echo "Arquivo .htaccess já existe. Pulando criação."
+    fi
+
+    # Ler informações do wp-config.php
+    CONFIG_FILE="/var/www/$DOMAIN_NAME/public_html/wp-config.php"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "Arquivo wp-config.php não encontrado."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    DB_NAME=$(grep "DB_NAME" "$CONFIG_FILE" | cut -d "'" -f 4)
+    DB_USER=$(grep "DB_USER" "$CONFIG_FILE" | cut -d "'" -f 4)
+    DB_PASSWORD=$(grep "DB_PASSWORD" "$CONFIG_FILE" | cut -d "'" -f 4)
+
+    if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ]; then
+        echo "Não foi possível obter informações do banco de dados."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    echo "Banco de dados: $DB_NAME"
+    echo "Usuário do banco de dados: $DB_USER"
+
+    # Criar o banco de dados e o usuário sem solicitar senha
+    echo "Configurando o banco de dados..."
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    sudo mysql -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASSWORD';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'localhost';"
+    sudo mysql -e "FLUSH PRIVILEGES;"
+
+    if [ $? -ne 0 ]; then
+        echo "Erro ao configurar o banco de dados."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    # Restaurar o banco de dados
+    DB_BACKUP_FILE="$TEMP_DIR/var/www/$DOMAIN_NAME/public_html/db/${DB_NAME}_backup.sql"
+    if [ ! -f "$DB_BACKUP_FILE" ]; then
+        echo "Arquivo de backup do banco de dados não encontrado em $DB_BACKUP_FILE."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    echo "Importando o banco de dados..."
+    mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < "$DB_BACKUP_FILE"
+    if [ $? -ne 0 ]; then
+        echo "Erro ao importar o banco de dados."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+
+    # Remover a pasta db por segurança
+    echo "Removendo a pasta db por segurança..."
+    sudo rm -rf "/var/www/$DOMAIN_NAME/public_html/db"
+
+    # Configurar Virtual Host no Apache
+    echo "Configurando Virtual Host no Apache para ${DOMAIN_NAME}..."
+    sudo bash -c "cat > /etc/apache2/sites-available/${DOMAIN_NAME}.conf" <<EOF
+<VirtualHost *:8091>
+    ServerName ${DOMAIN_NAME}
+    DocumentRoot /var/www/${DOMAIN_NAME}/public_html
+
+    <Directory /var/www/${DOMAIN_NAME}/public_html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
+    CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
+</VirtualHost>
+EOF
+
+    sudo a2ensite "${DOMAIN_NAME}.conf"
+    sudo systemctl reload apache2
+
+    # Configurar Virtual Host no Nginx com suporte SSL
+    echo "Configurando Virtual Host no Nginx para ${DOMAIN_NAME}..."
+    sudo bash -c "cat > /etc/nginx/sites-available/${DOMAIN_NAME}.conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN_NAME};
+
+    location / {
+        proxy_pass http://127.0.0.1:6081;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    error_log /var/log/nginx/${DOMAIN_NAME}-error.log;
+    access_log /var/log/nginx/${DOMAIN_NAME}-access.log;
+}
+EOF
+
+    sudo ln -sf /etc/nginx/sites-available/${DOMAIN_NAME}.conf /etc/nginx/sites-enabled/
+    sudo nginx -t
+    if [ $? -ne 0 ]; then
+        echo "Erro na configuração do Nginx para ${DOMAIN_NAME}."
+        rm -rf "$TEMP_DIR"
+        return
+    fi
+    sudo systemctl reload nginx
+    echo "Virtual Host no Nginx para ${DOMAIN_NAME} configurado com sucesso."
+
+    # Instalação do Certificado SSL com Let's Encrypt
+    echo "Instalando certificado SSL com Let's Encrypt para ${DOMAIN_NAME}..."
+    sudo certbot --nginx -d "${DOMAIN_NAME}" --non-interactive --agree-tos -m "admin@${DOMAIN_NAME}" --redirect
+
+    if [ $? -ne 0 ]; then
+        echo "Erro na instalação do Certificado SSL com Let's Encrypt para ${DOMAIN_NAME}."
+    else
+        echo "Certificado SSL instalado com sucesso para ${DOMAIN_NAME}."
+    fi
+
+    # Adicionar configurações de SSL e Varnish no wp-config.php
+    echo "Adicionando configurações de SSL e Varnish no wp-config.php..."
+    SSL_VARNISH_CONFIG="
+    // SSL + Varnish
+    define('FORCE_SSL_LOGIN', true);
+    define('FORCE_SSL_ADMIN', true);
+    define('CONCATENATE_SCRIPTS', false);
+    if (isset(\$_SERVER['HTTP_X_FORWARDED_PROTO']) && strpos(\$_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false) {
+        \$_SERVER['HTTPS'] = 'on';
+    }
+    "
+
+    # Verificar se as configurações já existem no wp-config.php
+    if ! grep -q "SSL + Varnish" "$CONFIG_FILE"; then
+        sudo sed -i "/\/\* That's all, stop editing! Happy publishing. \*\//i $SSL_VARNISH_CONFIG" "$CONFIG_FILE"
+        echo "Configurações adicionadas ao wp-config.php."
+    else
+        echo "Configurações de SSL e Varnish já existem no wp-config.php."
+    fi
+
+    # Limpar o diretório temporário
+    rm -rf "$TEMP_DIR"
+
+    echo "Restauração concluída com sucesso!"
+}
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -963,7 +1193,8 @@ function menu_wp {
         echo "3. Fazer Backup de uma Instalação do WordPress"
         echo "4. Remover instalação do WordPress"
         echo "5. Gerenciar Backups Automáticos"
-        echo "6. Sair"
+        echo "6. Restaurar um Backup"
+        echo "7. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -984,6 +1215,9 @@ function menu_wp {
                 gerenciar_backups_automaticos
                 ;;
             6)
+                restaurar_backup
+                ;;
+            7)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
