@@ -472,8 +472,8 @@ function instalar_wordpress {
     case $LANG_OPTION in
         1) WP_LANG="pt_BR";;
         2) WP_LANG="pt_PT";;
-        3) WP_LANG="en_US";;
-        *) WP_LANG="en_US"; echo "Opção inválida. Configurando padrão para Inglês.";;
+        3) WP_LANG="en_GB";;
+        *) WP_LANG="en_GB"; echo "Opção inválida. Configurando padrão para Inglês.";;
     esac
 
     # Criação do banco de dados e do usuário
