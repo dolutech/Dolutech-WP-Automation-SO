@@ -758,6 +758,14 @@ function fazer_backup {
     local DOMINIO=$1
     local BACKUP_OPTION=$2
 
+    # Definir o PATH para garantir que os comandos sejam encontrados quando executados via cron
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Definir HOME se não estiver definido (cron pode não definir)
+    if [ -z "$HOME" ]; then
+        HOME=$(getent passwd $(whoami) | cut -d: -f6)
+    fi
+
     # Verificar zip e unzip
     verificar_zip
 
