@@ -472,8 +472,8 @@ function instalar_wordpress {
     case $LANG_OPTION in
         1) WP_LANG="pt_BR";;
         2) WP_LANG="pt_PT";;
-        3) WP_LANG="en_US";;
-        *) WP_LANG="en_US"; echo "Opção inválida. Configurando padrão para Inglês.";;
+        3) WP_LANG="en_GB";;
+        *) WP_LANG="en_GB"; echo "Opção inválida. Configurando padrão para Inglês.";;
     esac
 
     # Criação do banco de dados e do usuário
@@ -758,6 +758,14 @@ function fazer_backup {
     local DOMINIO=$1
     local BACKUP_OPTION=$2
 
+    # Definir o PATH para garantir que os comandos sejam encontrados quando executados via cron
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Definir HOME se não estiver definido (cron pode não definir)
+    if [ -z "$HOME" ]; then
+        HOME=$(getent passwd $(whoami) | cut -d: -f6)
+    fi
+
     # Verificar zip e unzip
     verificar_zip
 
@@ -937,6 +945,14 @@ function gerenciar_backups_automaticos {
         fi
     fi
 }
+
+# Verificar se o script foi chamado com argumentos para backup automático
+if [ "$1" == "backup" ]; then
+    DOMINIO=$2
+    BACKUP_OPTION=$3
+    fazer_backup "$DOMINIO" "$BACKUP_OPTION"
+    exit 0
+fi
 
 # Menu principal
 function menu_wp {
