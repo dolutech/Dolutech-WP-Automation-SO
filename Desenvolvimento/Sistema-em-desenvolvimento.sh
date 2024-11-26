@@ -8,14 +8,6 @@
 # Licenciado sob GPLv3 - https://www.gnu.org/licenses/gpl-3.0.html
 # Sou apaixonado por Café que tal me pagar um?: https://www.paypal.com/paypalme/cataodemoraes
 
-# Verificar se o script foi chamado com argumentos para backup automático
-if [ "$1" == "backup" ]; then
-    DOMINIO=$2
-    BACKUP_OPTION=$3
-    fazer_backup "$DOMINIO" "$BACKUP_OPTION"
-    exit 0
-fi
-
 # Nome do Sistema
 NOME_SISTEMA="Dolutech WP Automation SO"
 
@@ -953,6 +945,14 @@ function gerenciar_backups_automaticos {
         fi
     fi
 }
+
+# Verificar se o script foi chamado com argumentos para backup automático
+if [ "$1" == "backup" ]; then
+    DOMINIO=$2
+    BACKUP_OPTION=$3
+    fazer_backup "$DOMINIO" "$BACKUP_OPTION"
+    exit 0
+fi
 
 # Menu principal
 function menu_wp {
