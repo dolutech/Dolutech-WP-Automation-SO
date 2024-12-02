@@ -1184,6 +1184,87 @@ EOF
     echo "Restauração concluída com sucesso!"
 }
 
+# Função para atualizar certificados SSL
+function atualizar_certificados_ssl {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Verificar se o Certbot está instalado
+    if ! command -v certbot &> /dev/null; then
+        echo "Certbot não está instalado. Instalando..."
+        sudo apt-get update
+        sudo apt-get install -y certbot python3-certbot-nginx
+    fi
+
+    # Listar domínios com certificados SSL instalados
+    echo "Obtendo lista de certificados SSL instalados..."
+    CERTIFICADOS=$(sudo certbot certificates 2>/dev/null | grep "Domains:" | awk '{$1=""; print $0}' | xargs)
+
+    if [ -z "$CERTIFICADOS" ]; then
+        echo "Nenhum certificado SSL encontrado."
+        return
+    fi
+
+    # Exibir lista de domínios com certificados SSL
+    echo "Domínios com certificados SSL instalados:"
+    IFS=' ' read -r -a DOMINIOS <<< "$CERTIFICADOS"
+    for i in "${!DOMINIOS[@]}"; do
+        echo "$((i+1)). ${DOMINIOS[$i]}"
+    done
+
+    # Atualizar certificados SSL
+    echo "Atualizando certificados SSL..."
+    sudo certbot renew --nginx --quiet
+    if [ $? -eq 0 ]; then
+        echo "Certificados SSL atualizados com sucesso."
+    else
+        echo "Erro ao atualizar os certificados SSL."
+        return
+    fi
+
+    # Perguntar se deseja agendar renovação automática
+    read -p "Deseja agendar renovação automática dos certificados SSL? (s/n): " AGENDAR_RENOVACAO
+    if [ "$AGENDAR_RENOVACAO" == "s" ]; then
+        # Perguntar intervalo de renovação
+        echo "Escolha o intervalo de renovação em dias:"
+        echo "1. A cada 30 dias"
+        echo "2. A cada 60 dias"
+        echo "3. A cada 89 dias"
+        read -p "Escolha uma opção (1-3): " OPCOES_INTERVALO
+
+        case $OPCOES_INTERVALO in
+            1)
+                INTERVALO=30
+                ;;
+            2)
+                INTERVALO=60
+                ;;
+            3)
+                INTERVALO=89
+                ;;
+            *)
+                echo "Opção inválida. Usando intervalo padrão de 60 dias."
+                INTERVALO=60
+                ;;
+        esac
+
+        # Remover tarefas existentes relacionadas à renovação de certificados pelo script
+        crontab -l | grep -v "$0 renew_ssl" | crontab -
+
+        # Adicionar entrada ao crontab
+        SCRIPT_PATH=$(realpath "$0")
+        CRON_JOB="0 0 */$INTERVALO * * $SCRIPT_PATH renew_ssl"
+        (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+        echo "Renovação automática agendada a cada $INTERVALO dias."
+    fi
+}
+
+    #Função de Renovar SSl pelo CLI 
+    elif [ "$1" == "renew_ssl" ]; then
+        atualizar_certificados_ssl
+        exit 0
+    fi
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -1194,7 +1275,8 @@ function menu_wp {
         echo "4. Remover instalação do WordPress"
         echo "5. Gerenciar Backups Automáticos"
         echo "6. Restaurar um Backup"
-        echo "7. Sair"
+        echo "7. Atualizar Certificados SSL"
+        echo "8. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -1218,6 +1300,9 @@ function menu_wp {
                 restaurar_backup
                 ;;
             7)
+                atualizar_certificados_ssl
+                ;;
+            8)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
