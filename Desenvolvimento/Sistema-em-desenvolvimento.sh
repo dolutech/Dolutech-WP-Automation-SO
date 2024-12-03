@@ -66,7 +66,7 @@ function configurar_mensagem_boas_vindas {
     fi
 
     # Gera o título estilizado com Figlet
-    ASCII_ART=$(figlet "WP Automation OS")
+    ASCII_ART=$(figlet "Dolutech WP Automation OS")
 
     # Mensagem a ser exibida
     MENSAGEM="
@@ -1557,6 +1557,97 @@ function gerenciar_bancos_de_dados {
     echo "Banco de dados e usuários associados removidos com sucesso."
 }
 
+# Função para configurar a segurança do servidor
+function configurar_seguranca {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    echo "Iniciando a configuração de segurança..."
+
+    # Atualizar o sistema
+    sudo apt update
+
+    # Instalar o ModSecurity
+    echo "Instalando o ModSecurity..."
+    sudo apt install libapache2-mod-security2 -y
+
+    # Ativar e configurar o ModSecurity
+    echo "Ativando o ModSecurity no Apache..."
+    sudo a2enmod security2
+
+    # Verificar se o arquivo de configuração existe; se não, copiar o arquivo recomendado
+    MODSECURITY_CONF="/etc/modsecurity/modsecurity.conf"
+    if [ ! -f "$MODSECURITY_CONF" ]; then
+        if [ -f "/etc/modsecurity/modsecurity.conf-recommended" ]; then
+            echo "Copiando o arquivo de configuração recomendado para $MODSECURITY_CONF..."
+            sudo cp /etc/modsecurity/modsecurity.conf-recommended "$MODSECURITY_CONF"
+        else
+            echo "Arquivo de configuração recomendado não encontrado!"
+            return
+        fi
+    fi
+
+    # Ativar o ModSecurity no arquivo de configuração
+    sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' "$MODSECURITY_CONF"
+
+    # Instalar as regras OWASP
+    echo "Instalando as regras OWASP para o ModSecurity..."
+    sudo apt install modsecurity-crs -y
+    sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
+
+    # Incluir as regras OWASP na configuração do ModSecurity
+    MODSECURITY_INCLUDE_CONF="/etc/apache2/mods-enabled/security2.conf"
+    if ! grep -q "IncludeOptional /usr/share/modsecurity-crs/*.conf" "$MODSECURITY_INCLUDE_CONF"; then
+        echo "Incluindo as regras OWASP na configuração do ModSecurity..."
+        sudo bash -c "echo 'IncludeOptional /usr/share/modsecurity-crs/*.conf' >> $MODSECURITY_INCLUDE_CONF"
+    fi
+
+    # Reiniciar o Apache para aplicar as configurações
+    echo "Reiniciando o Apache..."
+    sudo systemctl restart apache2
+
+    # Instalar o Fail2Ban
+    echo "Instalando o Fail2Ban..."
+    sudo apt install fail2ban -y
+
+    # Criar o arquivo de configuração local
+    echo "Configurando o Fail2Ban..."
+    if [ ! -f /etc/fail2ban/jail.local ]; then
+        sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    fi
+
+    # Adicionar regras para proteger o acesso ao /wp-login.php
+    if ! grep -q "\[wordpress\]" /etc/fail2ban/jail.local; then
+        echo "Adicionando regras para proteger o wp-login.php..."
+        sudo bash -c "cat >> /etc/fail2ban/jail.local" <<EOL
+
+[wordpress]
+enabled = true
+port = http,https
+filter = wordpress-auth
+logpath = /var/log/nginx/*access.log
+maxretry = 5
+bantime = 3600
+EOL
+    fi
+
+    # Criar o filtro wordpress-auth
+    if [ ! -f /etc/fail2ban/filter.d/wordpress-auth.conf ]; then
+        echo "Criando o filtro wordpress-auth..."
+        sudo bash -c "cat > /etc/fail2ban/filter.d/wordpress-auth.conf" <<EOL
+[Definition]
+failregex = ^<HOST> .*POST .*wp-login.php HTTP.* 200
+ignoreregex =
+EOL
+    fi
+
+    # Reiniciar o Fail2Ban para aplicar as configurações
+    echo "Reiniciando o Fail2Ban..."
+    sudo systemctl restart fail2ban
+
+    echo "Configuração de segurança concluída com sucesso!"
+}
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -1571,7 +1662,8 @@ function menu_wp {
         echo "8. Configurar Domínio para Instalação Manual"
         echo "9. Assistente de Banco de Dados"
         echo "10. Gerenciar Bancos de Dados"
-        echo "11. Sair"
+        echo "11. Configurar Segurança"
+        echo "12. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -1607,6 +1699,9 @@ function menu_wp {
                 gerenciar_bancos_de_dados
                 ;;
             11)
+                configurar_seguranca
+                ;;
+            12)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
