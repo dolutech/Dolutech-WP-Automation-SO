@@ -58,7 +58,32 @@ fi
 # Função para configurar a mensagem de boas-vindas com créditos e versão no /etc/motd
 function configurar_mensagem_boas_vindas {
     echo "Configurando mensagem de boas-vindas com créditos..."
-    echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
+
+    # Verifica se o Figlet está instalado; caso contrário, instala
+    if ! command -v figlet &> /dev/null; then
+        echo "Figlet não encontrado. Instalando Figlet..."
+        sudo apt-get update && sudo apt-get install figlet -y
+    fi
+
+    # Gera o título estilizado com Figlet
+    ASCII_ART=$(figlet "WP Automation OS")
+
+    # Mensagem a ser exibida
+    MENSAGEM="
+$ASCII_ART
+==========================================
+Bem-vindo ao $NOME_SISTEMA
+Versão atual: $VERSAO_LOCAL
+Para executar nosso menu, digite: dolutech
+Desenvolvido por: Lucas Catão de Moraes
+Site: https://dolutech.com
+Gostou do projeto? Paga-me um café: https://www.paypal.com/paypalme/cataodemoraes
+Feito com Amor para a comunidade de língua Portuguesa ❤
+Precisa de suporte ou ajuda? Nos envie um e-mail para: lucas@dolutech.com
+=========================================="
+
+    # Escreve a mensagem no /etc/motd
+    echo -e "$MENSAGEM" | sudo tee /etc/motd > /dev/null
 }
 
 # Função para criar o alias 'dolutech' e configurar o link simbólico
