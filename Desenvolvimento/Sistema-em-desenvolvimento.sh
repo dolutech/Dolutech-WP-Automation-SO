@@ -1196,9 +1196,9 @@ function atualizar_certificados_ssl {
         sudo apt-get install -y certbot python3-certbot-nginx
     fi
 
-    # Listar domínios com certificados SSL instalados
+    # Obter lista de certificados SSL instalados
     echo "Obtendo lista de certificados SSL instalados..."
-    CERTIFICADOS=$(sudo certbot certificates 2>/dev/null | grep "Domains:" | awk '{$1=""; print $0}' | xargs)
+    CERTIFICADOS=$(sudo certbot certificates 2>/dev/null | grep "Certificate Name:" | awk '{print $3}')
 
     if [ -z "$CERTIFICADOS" ]; then
         echo "Nenhum certificado SSL encontrado."
@@ -1207,63 +1207,330 @@ function atualizar_certificados_ssl {
 
     # Exibir lista de domínios com certificados SSL
     echo "Domínios com certificados SSL instalados:"
-    IFS=' ' read -r -a DOMINIOS <<< "$CERTIFICADOS"
+    IFS=$'\n' read -rd '' -a DOMINIOS <<<"$CERTIFICADOS"
+
     for i in "${!DOMINIOS[@]}"; do
         echo "$((i+1)). ${DOMINIOS[$i]}"
     done
+    echo "$(( ${#DOMINIOS[@]} + 1 )). Renovar todos os certificados"
 
-    # Atualizar certificados SSL
-    echo "Atualizando certificados SSL..."
-    sudo certbot renew --nginx --quiet
-    if [ $? -eq 0 ]; then
-        echo "Certificados SSL atualizados com sucesso."
-    else
-        echo "Erro ao atualizar os certificados SSL."
+    # Solicitar ao usuário que escolha um domínio ou renovar todos
+    read -p "Digite o número do domínio que deseja renovar ou escolha a opção para renovar todos: " NUM_ESCOLHA
+
+    if ! [[ "$NUM_ESCOLHA" =~ ^[0-9]+$ ]] || [ "$NUM_ESCOLHA" -lt 1 ] || [ "$NUM_ESCOLHA" -gt $(( ${#DOMINIOS[@]} + 1 )) ]; then
+        echo "Opção inválida."
         return
     fi
 
-    # Perguntar se deseja agendar renovação automática
-    read -p "Deseja agendar renovação automática dos certificados SSL? (s/n): " AGENDAR_RENOVACAO
-    if [ "$AGENDAR_RENOVACAO" == "s" ]; then
-        # Perguntar intervalo de renovação
-        echo "Escolha o intervalo de renovação em dias:"
-        echo "1. A cada 30 dias"
-        echo "2. A cada 60 dias"
-        echo "3. A cada 89 dias"
-        read -p "Escolha uma opção (1-3): " OPCOES_INTERVALO
-
-        case $OPCOES_INTERVALO in
-            1)
-                INTERVALO=30
-                ;;
-            2)
-                INTERVALO=60
-                ;;
-            3)
-                INTERVALO=89
-                ;;
-            *)
-                echo "Opção inválida. Usando intervalo padrão de 60 dias."
-                INTERVALO=60
-                ;;
-        esac
-
-        # Remover tarefas existentes relacionadas à renovação de certificados pelo script
-        crontab -l | grep -v "$0 renew_ssl" | crontab -
-
-        # Adicionar entrada ao crontab
-        SCRIPT_PATH=$(realpath "$0")
-        CRON_JOB="0 0 */$INTERVALO * * $SCRIPT_PATH renew_ssl"
-        (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
-        echo "Renovação automática agendada a cada $INTERVALO dias."
+    if [ "$NUM_ESCOLHA" -eq $(( ${#DOMINIOS[@]} + 1 )) ]; then
+        # Renovar todos os certificados
+        echo "Renovando todos os certificados SSL..."
+        sudo certbot renew --nginx
+        if [ $? -eq 0 ]; then
+            echo "Todos os certificados SSL foram renovados com sucesso."
+        else
+            echo "Erro ao renovar os certificados SSL."
+        fi
+    else
+        # Renovar certificado específico
+        DOMINIO_SELECIONADO="${DOMINIOS[$((NUM_ESCOLHA - 1))]}"
+        echo "Renovando o certificado SSL para o domínio: $DOMINIO_SELECIONADO"
+        sudo certbot certonly --nginx -d "$DOMINIO_SELECIONADO" --force-renewal
+        if [ $? -eq 0 ]; then
+            echo "Certificado SSL para $DOMINIO_SELECIONADO renovado com sucesso."
+        else
+            echo "Erro ao renovar o certificado SSL para $DOMINIO_SELECIONADO."
+        fi
     fi
+
+    # Informar sobre a renovação automática
+    echo "O Certbot já está configurado para renovar os certificados automaticamente quando estiverem próximos do vencimento."
+    echo "Nenhuma ação adicional é necessária."
 }
 
     #Função de Renovar SSl pelo CLI 
-    elif [ "$1" == "renew_ssl" ]; then
+    if [ "$1" == "renew_ssl" ]; then
         atualizar_certificados_ssl
         exit 0
     fi
+
+# Função para configurar o domínio para instalação manual
+function dominio_instalacao_manual {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Solicitar ao usuário o nome do domínio
+    read -p "Digite o nome do domínio (exemplo: seu_dominio.com): " DOMAIN_NAME
+
+    # Verificar se o domínio já existe
+    if [ -d "/var/www/${DOMAIN_NAME}" ]; then
+        echo "O domínio ${DOMAIN_NAME} já existe."
+        return
+    fi
+
+    # Criar a estrutura de diretórios
+    echo "Criando diretórios para ${DOMAIN_NAME}..."
+    sudo mkdir -p "/var/www/${DOMAIN_NAME}/public_html"
+    sudo chown -R www-data:www-data "/var/www/${DOMAIN_NAME}"
+    sudo chmod -R 755 "/var/www/${DOMAIN_NAME}"
+
+    # Criar o arquivo index.html com o conteúdo especificado
+    echo "Criando o arquivo index.html..."
+    sudo bash -c "cat > /var/www/${DOMAIN_NAME}/public_html/index.html" <<EOL
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Website Configurado</title>
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container text-center mt-5">
+        <h1 class="display-4">Configuração do Domínio</h1>
+        <p class="lead">O domínio <strong>${DOMAIN_NAME}</strong> foi configurado com sucesso utilizando o Sistema Dolutech WP Automation.</p>
+    </div>
+</body>
+</html>
+EOL
+
+    sudo chown www-data:www-data "/var/www/${DOMAIN_NAME}/public_html/index.html"
+    sudo chmod 644 "/var/www/${DOMAIN_NAME}/public_html/index.html"
+
+    # Configurar Virtual Host no Apache
+    echo "Configurando Virtual Host no Apache para ${DOMAIN_NAME}..."
+    sudo bash -c "cat > /etc/apache2/sites-available/${DOMAIN_NAME}.conf" <<EOF
+<VirtualHost *:8091>
+    ServerName ${DOMAIN_NAME}
+    DocumentRoot /var/www/${DOMAIN_NAME}/public_html
+
+    <Directory /var/www/${DOMAIN_NAME}/public_html>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
+    CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
+</VirtualHost>
+EOF
+
+    sudo a2ensite "${DOMAIN_NAME}.conf"
+    sudo systemctl reload apache2
+
+    # Configurar Virtual Host no Nginx com suporte SSL
+    echo "Configurando Virtual Host no Nginx para ${DOMAIN_NAME}..."
+    sudo bash -c "cat > /etc/nginx/sites-available/${DOMAIN_NAME}.conf" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN_NAME};
+
+    location / {
+        proxy_pass http://127.0.0.1:6081;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    error_log /var/log/nginx/${DOMAIN_NAME}-error.log;
+    access_log /var/log/nginx/${DOMAIN_NAME}-access.log;
+}
+EOF
+
+    sudo ln -sf /etc/nginx/sites-available/${DOMAIN_NAME}.conf /etc/nginx/sites-enabled/
+    sudo nginx -t
+    if [ $? -ne 0 ]; then
+        echo "Erro na configuração do Nginx para ${DOMAIN_NAME}."
+        return
+    fi
+    sudo systemctl reload nginx
+    echo "Virtual Host no Nginx para ${DOMAIN_NAME} configurado com sucesso."
+
+    # Instalação do Certificado SSL com Let's Encrypt
+    echo "Instalando certificado SSL com Let's Encrypt para ${DOMAIN_NAME}..."
+    sudo certbot --nginx -d "${DOMAIN_NAME}" --non-interactive --agree-tos -m "admin@${DOMAIN_NAME}" --redirect
+
+    if [ $? -ne 0 ]; then
+        echo "Erro na instalação do Certificado SSL com Let's Encrypt para ${DOMAIN_NAME}."
+    else
+        echo "Certificado SSL instalado com sucesso para ${DOMAIN_NAME}."
+    fi
+
+    echo "Configuração do domínio ${DOMAIN_NAME} concluída com sucesso."
+}
+
+# Função Assistente de Banco de Dados
+function assistente_data_base {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Solicitar o nome do banco de dados
+    read -p "Digite o nome do banco de dados: " DB_NAME
+
+    # Solicitar o nome do usuário do banco de dados
+    read -p "Digite o nome do usuário do banco de dados: " DB_USER
+
+    # Gerar uma senha segura para o usuário
+    DB_PASSWORD=$(openssl rand -base64 12)
+    echo "Senha gerada para o usuário ${DB_USER}: ${DB_PASSWORD}"
+
+    # Criar o banco de dados e o usuário, e associá-los
+    echo "Criando o banco de dados e o usuário, e associando-os..."
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+    sudo mysql -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';"
+    sudo mysql -e "FLUSH PRIVILEGES;"
+
+    if [ $? -ne 0 ]; then
+        echo "Erro ao criar o banco de dados ou o usuário."
+        return
+    fi
+
+    # Perguntar se o usuário deseja importar um arquivo .sql ou .sql.zip
+    read -p "Deseja importar um arquivo .sql ou .sql.zip para este banco de dados? (s/n): " IMPORTAR_DB
+
+    if [ "$IMPORTAR_DB" == "s" ]; then
+        read -p "Digite o caminho completo para o arquivo .sql ou .sql.zip: " DB_FILE_PATH
+
+        # Verificar se o arquivo existe
+        if [ ! -f "$DB_FILE_PATH" ]; then
+            echo "Arquivo não encontrado no caminho especificado."
+            return
+        fi
+
+        # Importar o arquivo .sql ou .sql.zip
+        if [[ "$DB_FILE_PATH" == *.zip ]]; then
+            echo "Descompactando e importando o arquivo .sql.zip..."
+            TEMP_SQL_FILE="/tmp/temp_db_import_${RANDOM}.sql"
+            unzip -p "$DB_FILE_PATH" > "$TEMP_SQL_FILE"
+            if [ $? -ne 0 ]; then
+                echo "Erro ao descompactar o arquivo .zip."
+                rm -f "$TEMP_SQL_FILE"
+                return
+            fi
+            mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < "$TEMP_SQL_FILE"
+            if [ $? -ne 0 ]; then
+                echo "Erro ao importar o banco de dados."
+                rm -f "$TEMP_SQL_FILE"
+                return
+            fi
+            rm -f "$TEMP_SQL_FILE"
+        elif [[ "$DB_FILE_PATH" == *.sql ]]; then
+            echo "Importando o arquivo .sql..."
+            mysql -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" < "$DB_FILE_PATH"
+            if [ $? -ne 0 ]; then
+                echo "Erro ao importar o banco de dados."
+                return
+            fi
+        else
+            echo "Formato de arquivo não suportado. Por favor, forneça um arquivo .sql ou .sql.zip."
+            return
+        fi
+
+        echo "Banco de dados importado com sucesso."
+    fi
+
+    # Exibir as credenciais para o usuário
+    echo "=========================================="
+    echo "Banco de Dados: $DB_NAME"
+    echo "Usuário do Banco de Dados: $DB_USER"
+    echo "Senha do Usuário: $DB_PASSWORD"
+    echo "=========================================="
+    echo "Guarde essas informações para configurar seu sistema."
+}
+
+# Função para listar e gerenciar bancos de dados
+function gerenciar_bancos_de_dados {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Obter a lista de bancos de dados, excluindo os bancos de dados do sistema
+    DATABASES=$(sudo mysql -e "SHOW DATABASES;" | grep -Ev "Database|information_schema|performance_schema|mysql|sys")
+
+    if [ -z "$DATABASES" ]; then
+        echo "Nenhum banco de dados encontrado."
+        return
+    fi
+
+    # Converter a lista de bancos de dados em um array
+    IFS=$'\n' read -rd '' -a DB_ARRAY <<<"$DATABASES"
+
+    echo "Bancos de dados disponíveis:"
+    for i in "${!DB_ARRAY[@]}"; do
+        echo "$((i+1)). ${DB_ARRAY[$i]}"
+    done
+
+    # Perguntar se o usuário deseja remover um banco de dados
+    read -p "Deseja remover um banco de dados e o usuário associado? (s/n): " REMOVER_DB
+
+    if [ "$REMOVER_DB" != "s" ]; then
+        echo "Operação cancelada pelo usuário."
+        return
+    fi
+
+    # Solicitar ao usuário que escolha um banco de dados para remover
+    read -p "Digite o número do banco de dados que deseja remover: " NUM_DB
+
+    if ! [[ "$NUM_DB" =~ ^[0-9]+$ ]] || [ "$NUM_DB" -lt 1 ] || [ "$NUM_DB" -gt ${#DB_ARRAY[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    DB_TO_REMOVE="${DB_ARRAY[$((NUM_DB - 1))]}"
+    echo "Banco de dados selecionado: $DB_TO_REMOVE"
+
+    # Identificar os usuários associados ao banco de dados
+    USERS=$(sudo mysql -e "SELECT DISTINCT USER FROM mysql.db WHERE Db='${DB_TO_REMOVE}';" | grep -v "USER")
+
+    if [ -z "$USERS" ]; then
+        echo "Nenhum usuário específico encontrado associado ao banco de dados ${DB_TO_REMOVE}."
+        echo "Deseja remover o banco de dados mesmo assim? (s/n): "
+        read CONFIRM_REMOVE_DB_ONLY
+        if [ "$CONFIRM_REMOVE_DB_ONLY" != "s" ]; then
+            echo "Operação cancelada pelo usuário."
+            return
+        fi
+    else
+        # Listar os usuários associados
+        echo "Usuários associados ao banco de dados ${DB_TO_REMOVE}:"
+        IFS=$'\n' read -rd '' -a USER_ARRAY <<<"$USERS"
+        for user in "${USER_ARRAY[@]}"; do
+            echo "- $user"
+        done
+
+        # Confirmar a remoção do banco de dados e dos usuários
+        echo "ATENÇÃO: Esta ação removerá o banco de dados '${DB_TO_REMOVE}' e os usuários associados."
+        read -p "Tem certeza que deseja continuar? (s/n): " CONFIRM_REMOVE
+
+        if [ "$CONFIRM_REMOVE" != "s" ]; then
+            echo "Operação cancelada pelo usuário."
+            return
+        fi
+    fi
+
+    # Remover o banco de dados
+    echo "Removendo o banco de dados '${DB_TO_REMOVE}'..."
+    sudo mysql -e "DROP DATABASE \`${DB_TO_REMOVE}\`;"
+
+    if [ $? -ne 0 ]; then
+        echo "Erro ao remover o banco de dados."
+        return
+    fi
+
+    # Remover os usuários associados
+    if [ -n "$USERS" ]; then
+        for user in "${USER_ARRAY[@]}"; do
+            echo "Removendo o usuário '${user}'..."
+            sudo mysql -e "DROP USER '${user}'@'localhost';"
+        done
+
+        # Atualizar os privilégios
+        sudo mysql -e "FLUSH PRIVILEGES;"
+    fi
+
+    echo "Banco de dados e usuários associados removidos com sucesso."
+}
 
 # Menu principal
 function menu_wp {
@@ -1276,7 +1543,10 @@ function menu_wp {
         echo "5. Gerenciar Backups Automáticos"
         echo "6. Restaurar um Backup"
         echo "7. Atualizar Certificados SSL"
-        echo "8. Sair"
+        echo "8. Configurar Domínio para Instalação Manual"
+        echo "9. Assistente de Banco de Dados"
+        echo "10. Gerenciar Bancos de Dados"
+        echo "11. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -1303,6 +1573,15 @@ function menu_wp {
                 atualizar_certificados_ssl
                 ;;
             8)
+                dominio_instalacao_manual
+                ;;
+            9)
+                assistente_data_base
+                ;;
+            10)
+                gerenciar_bancos_de_dados
+                ;;
+            11)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
