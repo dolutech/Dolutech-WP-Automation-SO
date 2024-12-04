@@ -1791,14 +1791,21 @@ function remover_isolamento_website {
 
     echo "Você selecionou o site: $DOMAIN_NAME"
 
+    # **NOVO:** Copiar os arquivos atualizados do volume Docker para um local temporário
+    TEMP_DIR="/tmp/${DOMAIN_NAME}_public_html_$(date +%s)"
+    mkdir "$TEMP_DIR"
+    sudo cp -r "$SITE_PUBLIC_HTML/." "$TEMP_DIR/"
+
     # Desmontar o volume Docker
     sudo umount "$SITE_PUBLIC_HTML"
 
     # Remover o diretório public_html
     sudo rm -rf "$SITE_PUBLIC_HTML"
 
-    # Restaurar os arquivos originais
-    sudo mv "$DOMAIN_DIR/public_html_backup" "$SITE_PUBLIC_HTML"
+    # Restaurar os arquivos atualizados do local temporário para public_html
+    sudo mv "$TEMP_DIR" "$SITE_PUBLIC_HTML"
+    sudo chown -R www-data:www-data "$SITE_PUBLIC_HTML"
+    sudo chmod -R 755 "$SITE_PUBLIC_HTML"
 
     # Remover o contêiner e o volume Docker
     sudo docker rm "${DOMAIN_NAME}_container"
@@ -1808,7 +1815,7 @@ function remover_isolamento_website {
     # Remover o arquivo de marcação
     sudo rm "$DOMAIN_DIR/ISOLATED"
 
-    echo "Isolamento removido do site $DOMAIN_NAME com sucesso."
+    echo "Isolamento removido do site $DOMAIN_NAME com sucesso. As alterações feitas durante o isolamento foram preservadas."
 }
 
 # Menu principal
