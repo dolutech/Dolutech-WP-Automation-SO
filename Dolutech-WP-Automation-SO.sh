@@ -1689,9 +1689,10 @@ function isolar_website {
 
     SITE_INDEX=$((OPCAO - 1))
     WP_CONFIG_PATH="${INSTALACOES[$SITE_INDEX]}"
-    SITE_DIR=$(dirname "$WP_CONFIG_PATH")
-    DOMAIN_DIR=$(dirname "$SITE_DIR")
-    DOMAIN_NAME=$(basename "$DOMAIN_DIR")
+    SITE_DIR=$(dirname "$WP_CONFIG_PATH")          # /var/www/dominio/public_html
+    DOMAIN_DIR=$(dirname "$SITE_DIR")              # /var/www/dominio
+    DOMAIN_NAME=$(basename "$DOMAIN_DIR")          # dominio
+    SITE_RELATIVE_PATH="${SITE_DIR#/}"             # var/www/dominio/public_html
 
     echo "Você selecionou o site: $DOMAIN_NAME"
 
@@ -1699,6 +1700,32 @@ function isolar_website {
     if [ -f "$DOMAIN_DIR/ISOLATED" ]; then
         echo "Este site já está isolado."
         return
+    fi
+
+    # Verificar se um contêiner com o mesmo nome já existe
+    if sudo docker ps -a --format '{{.Names}}' | grep -Eq "^${DOMAIN_NAME}_container\$"; then
+        echo "Um contêiner Docker chamado ${DOMAIN_NAME}_container já existe."
+        read -p "Deseja remover o contêiner existente e recriá-lo? (s/n): " RESPONSE
+        if [[ "$RESPONSE" =~ ^[Ss]$ ]]; then
+            echo "Removendo o contêiner existente..."
+            sudo docker rm -f "${DOMAIN_NAME}_container"
+        else
+            echo "Operação abortada."
+            return
+        fi
+    fi
+
+    # Verificar se um volume com o mesmo nome já existe
+    if sudo docker volume ls --format '{{.Name}}' | grep -Eq "^${DOMAIN_NAME}_volume\$"; then
+        echo "Um volume Docker chamado ${DOMAIN_NAME}_volume já existe."
+        read -p "Deseja remover o volume existente? Isso pode levar à perda de dados. (s/n): " VOL_RESPONSE
+        if [[ "$VOL_RESPONSE" =~ ^[Ss]$ ]]; then
+            echo "Removendo o volume existente..."
+            sudo docker volume rm "${DOMAIN_NAME}_volume"
+        else
+            echo "Operação abortada."
+            return
+        fi
     fi
 
     # Criar uma imagem Docker personalizada para o site
@@ -1711,11 +1738,11 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \\
-    apt-get install -y --no-install-recommends apt-utils rsync 2>&1 | grep -v "debconf: delaying package configuration, since apt-utils is not installed" && \\
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends apt-utils rsync 2>&1 | grep -v "debconf: delaying package configuration, since apt-utils is not installed" && \
     rm -rf /var/lib/apt/lists/*
 
-COPY . /var/www/html
+COPY . /${SITE_RELATIVE_PATH}
 EOF
 
     # Construir a imagem Docker
@@ -1732,23 +1759,27 @@ EOF
     # Criar um volume Docker para o site
     sudo docker volume create "${DOMAIN_NAME}_volume"
 
-    # Executar o contêiner Docker
+    # Executar o contêiner Docker com reinício automático
     sudo docker run -d --name "${DOMAIN_NAME}_container" \
-        -v "${DOMAIN_NAME}_volume":/var/www/html \
-        ubuntu:24.04 tail -f /dev/null
+        --restart unless-stopped \
+        -v "${DOMAIN_NAME}_volume":"/${SITE_RELATIVE_PATH}" \
+        "${DOMAIN_NAME}_image" tail -f /dev/null
 
     # Copiar os arquivos para o volume
-    sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":/var/www/html
+    sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":"/${SITE_RELATIVE_PATH}"
 
-    # Parar o contêiner (não precisamos que ele esteja em execução)
+    # Parar o contêiner (não precisamos que ele esteja em execução agora)
     sudo docker stop "${DOMAIN_NAME}_container"
 
     # Remover os arquivos originais e criar um ponto de montagem para o volume
     sudo mv "$SITE_DIR" "$DOMAIN_DIR/public_html_backup"
-    sudo mkdir "$SITE_DIR"
+    sudo mkdir -p "$SITE_DIR"
 
     # Montar o volume Docker no local original
-    sudo mount -o bind /var/lib/docker/volumes/"${DOMAIN_NAME}_volume"/_data "$SITE_DIR"
+    sudo mount -o bind "/var/lib/docker/volumes/${DOMAIN_NAME}_volume/_data" "$SITE_DIR"
+
+    # Iniciar o contêiner
+    sudo docker start "${DOMAIN_NAME}_container"
 
     # Criar um arquivo de marcação para indicar que o site está isolado
     sudo touch "$DOMAIN_DIR/ISOLATED"
@@ -1792,32 +1823,49 @@ function remover_isolamento_website {
 
     echo "Você selecionou o site: $DOMAIN_NAME"
 
-    # **NOVO:** Copiar os arquivos atualizados do volume Docker para um local temporário
+    # Parar o contêiner Docker se estiver em execução
+    if sudo docker ps --format '{{.Names}}' | grep -Eq "^${DOMAIN_NAME}_container\$"; then
+        echo "Parando o contêiner Docker ${DOMAIN_NAME}_container..."
+        sudo docker stop "${DOMAIN_NAME}_container"
+    fi
+
+    # **NOVO:** Copiar os arquivos do contêiner Docker para um local temporário
+    echo "Copiando os arquivos do contêiner Docker..."
     TEMP_DIR="/tmp/${DOMAIN_NAME}_public_html_$(date +%s)"
     mkdir "$TEMP_DIR"
-    sudo cp -r "$SITE_PUBLIC_HTML/." "$TEMP_DIR/"
+    sudo docker cp "${DOMAIN_NAME}_container:/${SITE_PUBLIC_HTML#/}" "$TEMP_DIR"
 
     # Desmontar o volume Docker
+    echo "Desmontando o volume Docker..."
     sudo umount "$SITE_PUBLIC_HTML"
 
     # Remover o diretório public_html
     sudo rm -rf "$SITE_PUBLIC_HTML"
 
-    # Restaurar os arquivos atualizados do local temporário para public_html
-    sudo mv "$TEMP_DIR" "$SITE_PUBLIC_HTML"
+    # Restaurar os arquivos do local temporário para public_html
+    sudo mv "$TEMP_DIR/$(basename "$SITE_PUBLIC_HTML")" "$SITE_PUBLIC_HTML"
     sudo chown -R www-data:www-data "$SITE_PUBLIC_HTML"
     sudo chmod -R 755 "$SITE_PUBLIC_HTML"
 
-    # Remover o contêiner e o volume Docker
+    # Remover o contêiner Docker
+    echo "Removendo o contêiner Docker..."
     sudo docker rm "${DOMAIN_NAME}_container"
+
+    # Remover o volume Docker
+    echo "Removendo o volume Docker..."
     sudo docker volume rm "${DOMAIN_NAME}_volume"
+
+    # Remover a imagem Docker
+    echo "Removendo a imagem Docker..."
     sudo docker rmi "${DOMAIN_NAME}_image"
 
     # Remover o arquivo de marcação
     sudo rm "$DOMAIN_DIR/ISOLATED"
 
-    # Remover o backup antigo
-    sudo rm -rf "$DOMAIN_DIR/public_html_backup"
+    # Remover o backup antigo, se existir
+    if [ -d "$DOMAIN_DIR/public_html_backup" ]; then
+        sudo rm -rf "$DOMAIN_DIR/public_html_backup"
+    fi
 
     echo "Isolamento removido do site $DOMAIN_NAME com sucesso. As alterações feitas durante o isolamento foram preservadas."
 }
