@@ -1815,6 +1815,9 @@ function remover_isolamento_website {
     # Remover o arquivo de marcação
     sudo rm "$DOMAIN_DIR/ISOLATED"
 
+    # Remover o backup antigo
+    sudo rm -rf "$DOMAIN_DIR/public_html_backup"
+
     echo "Isolamento removido do site $DOMAIN_NAME com sucesso. As alterações feitas durante o isolamento foram preservadas."
 }
 
