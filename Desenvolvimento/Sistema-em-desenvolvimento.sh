@@ -1648,6 +1648,161 @@ EOL
     echo "Configuração de segurança concluída com sucesso!"
 }
 
+# Função para isolar um site WordPress em um contêiner Docker
+function isolar_website {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Verificar se o Docker está instalado
+    if ! command -v docker &> /dev/null; then
+        echo "Docker não está instalado. Instalando o Docker..."
+        sudo apt-get update
+        sudo apt-get install -y docker.io
+        sudo systemctl enable --now docker
+        sudo usermod -aG docker $USER
+        echo "Docker instalado com sucesso. Por favor, faça logout e login novamente para aplicar as alterações de grupo."
+        return
+    fi
+
+    # Listar os sites WordPress instalados
+    INSTALACOES=(/var/www/*/public_html/wp-config.php)
+    if [ ${#INSTALACOES[@]} -eq 0 ]; then
+        echo "Nenhuma instalação do WordPress encontrada."
+        return
+    fi
+
+    echo "Sites WordPress instalados:"
+    for i in "${!INSTALACOES[@]}"; do
+        SITE_DIR=$(dirname "${INSTALACOES[$i]}")
+        DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+        echo "$((i+1)). $DOMAIN_NAME"
+    done
+
+    read -p "Digite o número do site que deseja isolar: " OPCAO
+
+    if ! [[ "$OPCAO" =~ ^[0-9]+$ ]] || [ "$OPCAO" -lt 1 ] || [ "$OPCAO" -gt ${#INSTALACOES[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    SITE_INDEX=$((OPCAO - 1))
+    SITE_DIR=$(dirname "${INSTALACOES[$SITE_INDEX]}")
+    DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+
+    echo "Você selecionou o site: $DOMAIN_NAME"
+
+    # Verificar se o site já está isolado
+    if [ -f "$SITE_DIR/ISOLATED" ]; then
+        echo "Este site já está isolado."
+        return
+    fi
+
+    # Criar uma imagem Docker personalizada para o site
+    echo "Criando o contêiner Docker para o site $DOMAIN_NAME..."
+
+    # Criar um Dockerfile temporário
+    TEMP_DOCKERFILE=$(mktemp)
+    cat > "$TEMP_DOCKERFILE" <<EOF
+FROM ubuntu:20.04
+
+RUN apt-get update && apt-get install -y \\
+    rsync \\
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /var/www/html
+
+EOF
+
+    # Construir a imagem Docker
+    sudo docker build -t "${DOMAIN_NAME}_image" -f "$TEMP_DOCKERFILE" "$SITE_DIR/public_html"
+
+    if [ $? -ne 0 ]; then
+        echo "Erro ao construir a imagem Docker."
+        rm -f "$TEMP_DOCKERFILE"
+        return
+    fi
+
+    rm -f "$TEMP_DOCKERFILE"
+
+    # Criar um volume Docker para o site
+    sudo docker volume create "${DOMAIN_NAME}_volume"
+
+    # Executar o contêiner Docker
+    sudo docker run -d --name "${DOMAIN_NAME}_container" \
+        -v "${DOMAIN_NAME}_volume":/var/www/html \
+        ubuntu:20.04 tail -f /dev/null
+
+    # Copiar os arquivos para o volume
+    sudo docker cp "$SITE_DIR/public_html/." "${DOMAIN_NAME}_container":/var/www/html
+
+    # Parar o contêiner (não precisamos que ele esteja em execução)
+    sudo docker stop "${DOMAIN_NAME}_container"
+
+    # Remover os arquivos originais e criar um ponto de montagem para o volume
+    sudo mv "$SITE_DIR/public_html" "$SITE_DIR/public_html_backup"
+    sudo mkdir "$SITE_DIR/public_html"
+
+    # Montar o volume Docker no local original
+    sudo mount -o bind /var/lib/docker/volumes/"${DOMAIN_NAME}_volume"/_data "$SITE_DIR/public_html"
+
+    # Criar um arquivo de marcação para indicar que o site está isolado
+    sudo touch "$SITE_DIR/ISOLATED"
+
+    echo "Site $DOMAIN_NAME isolado com sucesso."
+}
+
+# Função para remover o isolamento de um site WordPress
+function remover_isolamento_website {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Listar os sites isolados
+    ISOLATED_SITES=(/var/www/*/ISOLATED)
+    if [ ${#ISOLATED_SITES[@]} -eq 0 ]; then
+        echo "Nenhum site isolado encontrado."
+        return
+    fi
+
+    echo "Sites isolados:"
+    for i in "${!ISOLATED_SITES[@]}"; do
+        SITE_DIR=$(dirname "${ISOLATED_SITES[$i]}")
+        DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+        echo "$((i+1)). $DOMAIN_NAME"
+    done
+
+    read -p "Digite o número do site que deseja remover o isolamento: " OPCAO
+
+    if ! [[ "$OPCAO" =~ ^[0-9]+$ ]] || [ "$OPCAO" -lt 1 ] || [ "$OPCAO" -gt ${#ISOLATED_SITES[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    SITE_INDEX=$((OPCAO - 1))
+    SITE_DIR=$(dirname "${ISOLATED_SITES[$SITE_INDEX]}")
+    DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+
+    echo "Você selecionou o site: $DOMAIN_NAME"
+
+    # Desmontar o volume Docker
+    sudo umount "$SITE_DIR/public_html"
+
+    # Remover o diretório public_html
+    sudo rm -rf "$SITE_DIR/public_html"
+
+    # Restaurar os arquivos originais
+    sudo mv "$SITE_DIR/public_html_backup" "$SITE_DIR/public_html"
+
+    # Remover o contêiner e o volume Docker
+    sudo docker rm "${DOMAIN_NAME}_container"
+    sudo docker volume rm "${DOMAIN_NAME}_volume"
+    sudo docker rmi "${DOMAIN_NAME}_image"
+
+    # Remover o arquivo de marcação
+    sudo rm "$SITE_DIR/ISOLATED"
+
+    echo "Isolamento removido do site $DOMAIN_NAME com sucesso."
+}
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -1663,7 +1818,9 @@ function menu_wp {
         echo "9. Assistente de Banco de Dados"
         echo "10. Gerenciar Bancos de Dados"
         echo "11. Configurar Segurança"
-        echo "12. Sair"
+        echo "12. Isolar Website"
+        echo "13. Remover Isolamento de Website"
+        echo "14. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -1702,6 +1859,12 @@ function menu_wp {
                 configurar_seguranca
                 ;;
             12)
+                isolar_website
+                ;;
+            13)
+                remover_isolamento_website
+                ;;
+            14)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
