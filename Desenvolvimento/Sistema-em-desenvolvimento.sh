@@ -1593,24 +1593,13 @@ function configurar_seguranca {
     # Instalar as regras OWASP
     echo "Instalando as regras OWASP para o ModSecurity..."
     sudo apt install modsecurity-crs -y
-
-    # Verificar o local do arquivo crs-setup.conf.example e copiar para /etc/modsecurity/crs-setup.conf
-    if [ -f "/usr/share/modsecurity-crs/crs-setup.conf.example" ]; then
-        sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
-        CRS_RULES_PATH="/usr/share/modsecurity-crs"
-    elif [ -f "/usr/share/owasp-modsecurity-crs/crs-setup.conf.example" ]; then
-        sudo cp /usr/share/owasp-modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
-        CRS_RULES_PATH="/usr/share/owasp-modsecurity-crs"
-    else
-        echo "Arquivo crs-setup.conf.example não encontrado!"
-        return
-    fi
+    sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
 
     # Incluir as regras OWASP na configuração do ModSecurity
     MODSECURITY_INCLUDE_CONF="/etc/apache2/mods-enabled/security2.conf"
-    if ! grep -q "IncludeOptional $CRS_RULES_PATH/\*.conf" "$MODSECURITY_INCLUDE_CONF"; then
+    if ! grep -q "IncludeOptional /usr/share/modsecurity-crs/*.conf" "$MODSECURITY_INCLUDE_CONF"; then
         echo "Incluindo as regras OWASP na configuração do ModSecurity..."
-        sudo bash -c "echo 'IncludeOptional $CRS_RULES_PATH/*.conf' >> $MODSECURITY_INCLUDE_CONF"
+        sudo bash -c "echo 'IncludeOptional /usr/share/modsecurity-crs/*.conf' >> $MODSECURITY_INCLUDE_CONF"
     fi
 
     # Reiniciar o Apache para aplicar as configurações
@@ -1619,7 +1608,7 @@ function configurar_seguranca {
 
     # Instalar o Fail2Ban
     echo "Instalando o Fail2Ban..."
-    sudo apt install fail2ban -y 2>/dev/null
+    sudo apt install fail2ban -y
 
     # Criar o arquivo de configuração local
     echo "Configurando o Fail2Ban..."
@@ -1636,7 +1625,7 @@ function configurar_seguranca {
 enabled = true
 port = http,https
 filter = wordpress-auth
-logpath = /var/log/apache2/*access.log
+logpath = /var/log/nginx/*access.log
 maxretry = 5
 bantime = 3600
 EOL
@@ -1647,7 +1636,7 @@ EOL
         echo "Criando o filtro wordpress-auth..."
         sudo bash -c "cat > /etc/fail2ban/filter.d/wordpress-auth.conf" <<EOL
 [Definition]
-failregex = ^<HOST> .*POST .*wp-login\.php HTTP.* 200
+failregex = ^<HOST> .*POST .*wp-login.php HTTP.* 200
 ignoreregex =
 EOL
     fi
@@ -1713,20 +1702,19 @@ function isolar_website {
     fi
 
     # Criar uma imagem Docker personalizada para o site
-    echo "Criando a imagem Docker para o site $DOMAIN_NAME..."
+    echo "Criando o contêiner Docker para o site $DOMAIN_NAME..."
 
     # Criar um Dockerfile temporário
     TEMP_DOCKERFILE=$(mktemp)
     cat > "$TEMP_DOCKERFILE" <<EOF
-FROM ubuntu:24.04
+FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \\
-    apt-get install -y --no-install-recommends apt-utils rsync 2>&1 | grep -v "debconf: delaying package configuration, since apt-utils is not installed" && \\
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \\
+    rsync \\
+    && rm -rf /var/lib/apt/lists/*
 
 COPY . /var/www/html
+
 EOF
 
     # Construir a imagem Docker
@@ -1746,7 +1734,7 @@ EOF
     # Executar o contêiner Docker
     sudo docker run -d --name "${DOMAIN_NAME}_container" \
         -v "${DOMAIN_NAME}_volume":/var/www/html \
-        ubuntu:24.04 tail -f /dev/null
+        ubuntu:20.04 tail -f /dev/null
 
     # Copiar os arquivos para o volume
     sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":/var/www/html
@@ -1829,7 +1817,6 @@ function remover_isolamento_website {
 
     # Remover o backup antigo
     sudo rm -rf "$DOMAIN_DIR/public_html_backup"
-
 
     echo "Isolamento removido do site $DOMAIN_NAME com sucesso. As alterações feitas durante o isolamento foram preservadas."
 }
