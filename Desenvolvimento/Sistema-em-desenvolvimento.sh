@@ -1673,8 +1673,10 @@ function isolar_website {
 
     echo "Sites WordPress instalados:"
     for i in "${!INSTALACOES[@]}"; do
-        SITE_DIR=$(dirname "${INSTALACOES[$i]}")
-        DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+        WP_CONFIG_PATH="${INSTALACOES[$i]}"  # /var/www/dominio/public_html/wp-config.php
+        SITE_DIR=$(dirname "$WP_CONFIG_PATH")  # /var/www/dominio/public_html
+        DOMAIN_DIR=$(dirname "$SITE_DIR")      # /var/www/dominio
+        DOMAIN_NAME=$(basename "$DOMAIN_DIR")  # Extrai 'dominio' de /var/www/dominio
         echo "$((i+1)). $DOMAIN_NAME"
     done
 
@@ -1686,13 +1688,15 @@ function isolar_website {
     fi
 
     SITE_INDEX=$((OPCAO - 1))
-    SITE_DIR=$(dirname "${INSTALACOES[$SITE_INDEX]}")
-    DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+    WP_CONFIG_PATH="${INSTALACOES[$SITE_INDEX]}"
+    SITE_DIR=$(dirname "$WP_CONFIG_PATH")
+    DOMAIN_DIR=$(dirname "$SITE_DIR")
+    DOMAIN_NAME=$(basename "$DOMAIN_DIR")
 
     echo "Você selecionou o site: $DOMAIN_NAME"
 
     # Verificar se o site já está isolado
-    if [ -f "$SITE_DIR/ISOLATED" ]; then
+    if [ -f "$DOMAIN_DIR/ISOLATED" ]; then
         echo "Este site já está isolado."
         return
     fi
@@ -1714,7 +1718,7 @@ COPY . /var/www/html
 EOF
 
     # Construir a imagem Docker
-    sudo docker build -t "${DOMAIN_NAME}_image" -f "$TEMP_DOCKERFILE" "$SITE_DIR/public_html"
+    sudo docker build -t "${DOMAIN_NAME}_image" -f "$TEMP_DOCKERFILE" "$SITE_DIR"
 
     if [ $? -ne 0 ]; then
         echo "Erro ao construir a imagem Docker."
@@ -1733,20 +1737,20 @@ EOF
         ubuntu:20.04 tail -f /dev/null
 
     # Copiar os arquivos para o volume
-    sudo docker cp "$SITE_DIR/public_html/." "${DOMAIN_NAME}_container":/var/www/html
+    sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":/var/www/html
 
     # Parar o contêiner (não precisamos que ele esteja em execução)
     sudo docker stop "${DOMAIN_NAME}_container"
 
     # Remover os arquivos originais e criar um ponto de montagem para o volume
-    sudo mv "$SITE_DIR/public_html" "$SITE_DIR/public_html_backup"
-    sudo mkdir "$SITE_DIR/public_html"
+    sudo mv "$SITE_DIR" "$DOMAIN_DIR/public_html_backup"
+    sudo mkdir "$SITE_DIR"
 
     # Montar o volume Docker no local original
-    sudo mount -o bind /var/lib/docker/volumes/"${DOMAIN_NAME}_volume"/_data "$SITE_DIR/public_html"
+    sudo mount -o bind /var/lib/docker/volumes/"${DOMAIN_NAME}_volume"/_data "$SITE_DIR"
 
     # Criar um arquivo de marcação para indicar que o site está isolado
-    sudo touch "$SITE_DIR/ISOLATED"
+    sudo touch "$DOMAIN_DIR/ISOLATED"
 
     echo "Site $DOMAIN_NAME isolado com sucesso."
 }
@@ -1765,8 +1769,9 @@ function remover_isolamento_website {
 
     echo "Sites isolados:"
     for i in "${!ISOLATED_SITES[@]}"; do
-        SITE_DIR=$(dirname "${ISOLATED_SITES[$i]}")
-        DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+        ISOLATED_FILE="${ISOLATED_SITES[$i]}"
+        DOMAIN_DIR=$(dirname "$ISOLATED_FILE")      # /var/www/dominio
+        DOMAIN_NAME=$(basename "$DOMAIN_DIR")       # Extrai 'dominio' de /var/www/dominio
         echo "$((i+1)). $DOMAIN_NAME"
     done
 
@@ -1778,19 +1783,22 @@ function remover_isolamento_website {
     fi
 
     SITE_INDEX=$((OPCAO - 1))
-    SITE_DIR=$(dirname "${ISOLATED_SITES[$SITE_INDEX]}")
-    DOMAIN_NAME=$(basename "$(dirname "$SITE_DIR")")
+    ISOLATED_FILE="${ISOLATED_SITES[$SITE_INDEX]}"
+    DOMAIN_DIR=$(dirname "$ISOLATED_FILE")
+    DOMAIN_NAME=$(basename "$DOMAIN_DIR")
+
+    SITE_PUBLIC_HTML="$DOMAIN_DIR/public_html"
 
     echo "Você selecionou o site: $DOMAIN_NAME"
 
     # Desmontar o volume Docker
-    sudo umount "$SITE_DIR/public_html"
+    sudo umount "$SITE_PUBLIC_HTML"
 
     # Remover o diretório public_html
-    sudo rm -rf "$SITE_DIR/public_html"
+    sudo rm -rf "$SITE_PUBLIC_HTML"
 
     # Restaurar os arquivos originais
-    sudo mv "$SITE_DIR/public_html_backup" "$SITE_DIR/public_html"
+    sudo mv "$DOMAIN_DIR/public_html_backup" "$SITE_PUBLIC_HTML"
 
     # Remover o contêiner e o volume Docker
     sudo docker rm "${DOMAIN_NAME}_container"
@@ -1798,7 +1806,7 @@ function remover_isolamento_website {
     sudo docker rmi "${DOMAIN_NAME}_image"
 
     # Remover o arquivo de marcação
-    sudo rm "$SITE_DIR/ISOLATED"
+    sudo rm "$DOMAIN_DIR/ISOLATED"
 
     echo "Isolamento removido do site $DOMAIN_NAME com sucesso."
 }
