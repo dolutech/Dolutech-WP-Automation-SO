@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Dolutech WP Automation SO - Ferramenta de Instalação Completa do WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, Backup Automático, Sistema de Restauração de Backup, Configurações de Segurança.
+# Dolutech WP Automation SO - Instalação Completa do WordPress com Apache, MariaDB, PHP, phpMyAdmin, Redis, Nginx, Varnish, mod_pagespeed
 # Desenvolvido por: Lucas Catão de Moraes
 # Sou especialista em Cibersegurança, Big Data e Privacidade de dados
 # E-mail: lucas@dolutech.com
@@ -58,7 +58,32 @@ fi
 # Função para configurar a mensagem de boas-vindas com créditos e versão no /etc/motd
 function configurar_mensagem_boas_vindas {
     echo "Configurando mensagem de boas-vindas com créditos..."
-    echo -e "==========================================\nBem-vindo ao $NOME_SISTEMA\nVersão atual: $VERSAO_LOCAL\nPara executar nosso menu, digite: dolutech\nDesenvolvido por: Lucas Catão de Moraes\nSite: https://dolutech.com\nGostou do projeto? paga-me um café : https://www.paypal.com/paypalme/cataodemoraes\nFeito com Amor para a comunidade de língua Portuguesa ❤\nPrecisa de suporte ou ajuda? nos envie um e-mail para: lucas@dolutech.com\n==========================================" | sudo tee /etc/motd > /dev/null
+
+    # Verifica se o Figlet está instalado; caso contrário, instala
+    if ! command -v figlet &> /dev/null; then
+        echo "Figlet não encontrado. Instalando Figlet..."
+        sudo apt-get update && sudo apt-get install figlet -y
+    fi
+
+    # Gera o título estilizado com Figlet
+    ASCII_ART=$(figlet "Dolutech WP Automation OS")
+
+    # Mensagem a ser exibida
+    MENSAGEM="
+$ASCII_ART
+==========================================
+Bem-vindo ao $NOME_SISTEMA
+Versão atual: $VERSAO_LOCAL
+Para executar nosso menu, digite: dolutech
+Desenvolvido por: Lucas Catão de Moraes
+Site: https://dolutech.com
+Gostou do projeto? Paga-me um café: https://www.paypal.com/paypalme/cataodemoraes
+Feito com Amor para a comunidade de língua Portuguesa ❤
+Precisa de suporte ou ajuda? Nos envie um e-mail para: lucas@dolutech.com
+=========================================="
+
+    # Escreve a mensagem no /etc/motd
+    echo -e "$MENSAGEM" | sudo tee /etc/motd > /dev/null
 }
 
 # Função para criar o alias 'dolutech' e configurar o link simbólico
@@ -1532,6 +1557,260 @@ function gerenciar_bancos_de_dados {
     echo "Banco de dados e usuários associados removidos com sucesso."
 }
 
+# Função para configurar a segurança do servidor
+function configurar_seguranca {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    echo "Iniciando a configuração de segurança..."
+
+    # Atualizar o sistema
+    sudo apt update
+
+    # Instalar o ModSecurity
+    echo "Instalando o ModSecurity..."
+    sudo apt install libapache2-mod-security2 -y
+
+    # Ativar e configurar o ModSecurity
+    echo "Ativando o ModSecurity no Apache..."
+    sudo a2enmod security2
+
+    # Verificar se o arquivo de configuração existe; se não, copiar o arquivo recomendado
+    MODSECURITY_CONF="/etc/modsecurity/modsecurity.conf"
+    if [ ! -f "$MODSECURITY_CONF" ]; then
+        if [ -f "/etc/modsecurity/modsecurity.conf-recommended" ]; then
+            echo "Copiando o arquivo de configuração recomendado para $MODSECURITY_CONF..."
+            sudo cp /etc/modsecurity/modsecurity.conf-recommended "$MODSECURITY_CONF"
+        else
+            echo "Arquivo de configuração recomendado não encontrado!"
+            return
+        fi
+    fi
+
+    # Ativar o ModSecurity no arquivo de configuração
+    sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' "$MODSECURITY_CONF"
+
+    # Instalar as regras OWASP
+    echo "Instalando as regras OWASP para o ModSecurity..."
+    sudo apt install modsecurity-crs -y
+    sudo cp /usr/share/modsecurity-crs/crs-setup.conf.example /etc/modsecurity/crs-setup.conf
+
+    # Incluir as regras OWASP na configuração do ModSecurity
+    MODSECURITY_INCLUDE_CONF="/etc/apache2/mods-enabled/security2.conf"
+    if ! grep -q "IncludeOptional /usr/share/modsecurity-crs/*.conf" "$MODSECURITY_INCLUDE_CONF"; then
+        echo "Incluindo as regras OWASP na configuração do ModSecurity..."
+        sudo bash -c "echo 'IncludeOptional /usr/share/modsecurity-crs/*.conf' >> $MODSECURITY_INCLUDE_CONF"
+    fi
+
+    # Reiniciar o Apache para aplicar as configurações
+    echo "Reiniciando o Apache..."
+    sudo systemctl restart apache2
+
+    # Instalar o Fail2Ban
+    echo "Instalando o Fail2Ban..."
+    sudo apt install fail2ban -y
+
+    # Criar o arquivo de configuração local
+    echo "Configurando o Fail2Ban..."
+    if [ ! -f /etc/fail2ban/jail.local ]; then
+        sudo cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+    fi
+
+    # Adicionar regras para proteger o acesso ao /wp-login.php
+    if ! grep -q "\[wordpress\]" /etc/fail2ban/jail.local; then
+        echo "Adicionando regras para proteger o wp-login.php..."
+        sudo bash -c "cat >> /etc/fail2ban/jail.local" <<EOL
+
+[wordpress]
+enabled = true
+port = http,https
+filter = wordpress-auth
+logpath = /var/log/nginx/*access.log
+maxretry = 5
+bantime = 3600
+EOL
+    fi
+
+    # Criar o filtro wordpress-auth
+    if [ ! -f /etc/fail2ban/filter.d/wordpress-auth.conf ]; then
+        echo "Criando o filtro wordpress-auth..."
+        sudo bash -c "cat > /etc/fail2ban/filter.d/wordpress-auth.conf" <<EOL
+[Definition]
+failregex = ^<HOST> .*POST .*wp-login.php HTTP.* 200
+ignoreregex =
+EOL
+    fi
+
+    # Reiniciar o Fail2Ban para aplicar as configurações
+    echo "Reiniciando o Fail2Ban..."
+    sudo systemctl restart fail2ban
+
+    echo "Configuração de segurança concluída com sucesso!"
+}
+
+# Função para isolar um site WordPress em um contêiner Docker
+function isolar_website {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Verificar se o Docker está instalado
+    if ! command -v docker &> /dev/null; then
+        echo "Docker não está instalado. Instalando o Docker..."
+        sudo apt-get update
+        sudo apt-get install -y docker.io
+        sudo systemctl enable --now docker
+        sudo usermod -aG docker $USER
+        echo "Docker instalado com sucesso. Por favor, faça logout e login novamente para aplicar as alterações de grupo."
+        return
+    fi
+
+    # Listar os sites WordPress instalados
+    INSTALACOES=(/var/www/*/public_html/wp-config.php)
+    if [ ${#INSTALACOES[@]} -eq 0 ]; then
+        echo "Nenhuma instalação do WordPress encontrada."
+        return
+    fi
+
+    echo "Sites WordPress instalados:"
+    for i in "${!INSTALACOES[@]}"; do
+        WP_CONFIG_PATH="${INSTALACOES[$i]}"  # /var/www/dominio/public_html/wp-config.php
+        SITE_DIR=$(dirname "$WP_CONFIG_PATH")  # /var/www/dominio/public_html
+        DOMAIN_DIR=$(dirname "$SITE_DIR")      # /var/www/dominio
+        DOMAIN_NAME=$(basename "$DOMAIN_DIR")  # Extrai 'dominio' de /var/www/dominio
+        echo "$((i+1)). $DOMAIN_NAME"
+    done
+
+    read -p "Digite o número do site que deseja isolar: " OPCAO
+
+    if ! [[ "$OPCAO" =~ ^[0-9]+$ ]] || [ "$OPCAO" -lt 1 ] || [ "$OPCAO" -gt ${#INSTALACOES[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    SITE_INDEX=$((OPCAO - 1))
+    WP_CONFIG_PATH="${INSTALACOES[$SITE_INDEX]}"
+    SITE_DIR=$(dirname "$WP_CONFIG_PATH")
+    DOMAIN_DIR=$(dirname "$SITE_DIR")
+    DOMAIN_NAME=$(basename "$DOMAIN_DIR")
+
+    echo "Você selecionou o site: $DOMAIN_NAME"
+
+    # Verificar se o site já está isolado
+    if [ -f "$DOMAIN_DIR/ISOLATED" ]; then
+        echo "Este site já está isolado."
+        return
+    fi
+
+    # Criar uma imagem Docker personalizada para o site
+    echo "Criando o contêiner Docker para o site $DOMAIN_NAME..."
+
+    # Criar um Dockerfile temporário
+    TEMP_DOCKERFILE=$(mktemp)
+    cat > "$TEMP_DOCKERFILE" <<EOF
+FROM ubuntu:20.04
+
+RUN apt-get update && apt-get install -y \\
+    rsync \\
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . /var/www/html
+
+EOF
+
+    # Construir a imagem Docker
+    sudo docker build -t "${DOMAIN_NAME}_image" -f "$TEMP_DOCKERFILE" "$SITE_DIR"
+
+    if [ $? -ne 0 ]; then
+        echo "Erro ao construir a imagem Docker."
+        rm -f "$TEMP_DOCKERFILE"
+        return
+    fi
+
+    rm -f "$TEMP_DOCKERFILE"
+
+    # Criar um volume Docker para o site
+    sudo docker volume create "${DOMAIN_NAME}_volume"
+
+    # Executar o contêiner Docker
+    sudo docker run -d --name "${DOMAIN_NAME}_container" \
+        -v "${DOMAIN_NAME}_volume":/var/www/html \
+        ubuntu:20.04 tail -f /dev/null
+
+    # Copiar os arquivos para o volume
+    sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":/var/www/html
+
+    # Parar o contêiner (não precisamos que ele esteja em execução)
+    sudo docker stop "${DOMAIN_NAME}_container"
+
+    # Remover os arquivos originais e criar um ponto de montagem para o volume
+    sudo mv "$SITE_DIR" "$DOMAIN_DIR/public_html_backup"
+    sudo mkdir "$SITE_DIR"
+
+    # Montar o volume Docker no local original
+    sudo mount -o bind /var/lib/docker/volumes/"${DOMAIN_NAME}_volume"/_data "$SITE_DIR"
+
+    # Criar um arquivo de marcação para indicar que o site está isolado
+    sudo touch "$DOMAIN_DIR/ISOLATED"
+
+    echo "Site $DOMAIN_NAME isolado com sucesso."
+}
+
+# Função para remover o isolamento de um site WordPress
+function remover_isolamento_website {
+    # Definir o PATH para garantir que os comandos sejam encontrados
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Listar os sites isolados
+    ISOLATED_SITES=(/var/www/*/ISOLATED)
+    if [ ${#ISOLATED_SITES[@]} -eq 0 ]; then
+        echo "Nenhum site isolado encontrado."
+        return
+    fi
+
+    echo "Sites isolados:"
+    for i in "${!ISOLATED_SITES[@]}"; do
+        ISOLATED_FILE="${ISOLATED_SITES[$i]}"
+        DOMAIN_DIR=$(dirname "$ISOLATED_FILE")      # /var/www/dominio
+        DOMAIN_NAME=$(basename "$DOMAIN_DIR")       # Extrai 'dominio' de /var/www/dominio
+        echo "$((i+1)). $DOMAIN_NAME"
+    done
+
+    read -p "Digite o número do site que deseja remover o isolamento: " OPCAO
+
+    if ! [[ "$OPCAO" =~ ^[0-9]+$ ]] || [ "$OPCAO" -lt 1 ] || [ "$OPCAO" -gt ${#ISOLATED_SITES[@]} ]; then
+        echo "Opção inválida."
+        return
+    fi
+
+    SITE_INDEX=$((OPCAO - 1))
+    ISOLATED_FILE="${ISOLATED_SITES[$SITE_INDEX]}"
+    DOMAIN_DIR=$(dirname "$ISOLATED_FILE")
+    DOMAIN_NAME=$(basename "$DOMAIN_DIR")
+
+    SITE_PUBLIC_HTML="$DOMAIN_DIR/public_html"
+
+    echo "Você selecionou o site: $DOMAIN_NAME"
+
+    # Desmontar o volume Docker
+    sudo umount "$SITE_PUBLIC_HTML"
+
+    # Remover o diretório public_html
+    sudo rm -rf "$SITE_PUBLIC_HTML"
+
+    # Restaurar os arquivos originais
+    sudo mv "$DOMAIN_DIR/public_html_backup" "$SITE_PUBLIC_HTML"
+
+    # Remover o contêiner e o volume Docker
+    sudo docker rm "${DOMAIN_NAME}_container"
+    sudo docker volume rm "${DOMAIN_NAME}_volume"
+    sudo docker rmi "${DOMAIN_NAME}_image"
+
+    # Remover o arquivo de marcação
+    sudo rm "$DOMAIN_DIR/ISOLATED"
+
+    echo "Isolamento removido do site $DOMAIN_NAME com sucesso."
+}
+
 # Menu principal
 function menu_wp {
     while true; do
@@ -1546,7 +1825,10 @@ function menu_wp {
         echo "8. Configurar Domínio para Instalação Manual"
         echo "9. Assistente de Banco de Dados"
         echo "10. Gerenciar Bancos de Dados"
-        echo "11. Sair"
+        echo "11. Configurar Segurança"
+        echo "12. Isolar Website"
+        echo "13. Remover Isolamento de Website"
+        echo "14. Sair"
         echo "=================================================================="
         read -p "Escolha uma opção: " OPCAO
 
@@ -1582,6 +1864,15 @@ function menu_wp {
                 gerenciar_bancos_de_dados
                 ;;
             11)
+                configurar_seguranca
+                ;;
+            12)
+                isolar_website
+                ;;
+            13)
+                remover_isolamento_website
+                ;;
+            14)
                 echo "Saindo do sistema."
                 exit 0
                 ;;
