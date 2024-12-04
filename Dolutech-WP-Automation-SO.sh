@@ -1702,19 +1702,20 @@ function isolar_website {
     fi
 
     # Criar uma imagem Docker personalizada para o site
-    echo "Criando o contêiner Docker para o site $DOMAIN_NAME..."
+    echo "Criando a imagem Docker para o site $DOMAIN_NAME..."
 
     # Criar um Dockerfile temporário
     TEMP_DOCKERFILE=$(mktemp)
     cat > "$TEMP_DOCKERFILE" <<EOF
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-RUN apt-get update && apt-get install -y \\
-    rsync \\
-    && rm -rf /var/lib/apt/lists/*
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \\
+    apt-get install -y --no-install-recommends apt-utils rsync 2>&1 | grep -v "debconf: delaying package configuration, since apt-utils is not installed" && \\
+    rm -rf /var/lib/apt/lists/*
 
 COPY . /var/www/html
-
 EOF
 
     # Construir a imagem Docker
@@ -1734,7 +1735,7 @@ EOF
     # Executar o contêiner Docker
     sudo docker run -d --name "${DOMAIN_NAME}_container" \
         -v "${DOMAIN_NAME}_volume":/var/www/html \
-        ubuntu:20.04 tail -f /dev/null
+        ubuntu:24.04 tail -f /dev/null
 
     # Copiar os arquivos para o volume
     sudo docker cp "$SITE_DIR/." "${DOMAIN_NAME}_container":/var/www/html
